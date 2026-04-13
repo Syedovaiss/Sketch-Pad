@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
     kotlin("plugin.serialization") version "2.3.20"
+    id("maven-publish")
 }
 
 android {
@@ -11,7 +12,11 @@ android {
             minorApiLevel = 1
         }
     }
-
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
     defaultConfig {
         minSdk = 26
 
@@ -39,11 +44,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
+
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -52,5 +53,18 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.kotlinx.serialization.json)
-    implementation("com.github.skydoves:colorpicker-compose:1.1.3")
+    implementation(libs.colorpicker.compose)
+}
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                groupId = "com.github.ovais"
+                artifactId = "sketchpad"
+                version = "1.0.0"
+
+                from(components["release"])
+            }
+        }
+    }
 }
