@@ -47,7 +47,6 @@ fun exportImage(
         canvas.withTranslation(dx - bounds.minX * scale, dy - bounds.minY * scale) {
             withScale(scale, scale) {
                 strokes.forEach { stroke ->
-                    // Fix: Correctly convert the stored color Long back to a Compose Color and then to ARGB Int
                     paint.color = Color(stroke.color.toULong()).toArgb()
                     paint.strokeWidth = stroke.strokeWidth
 

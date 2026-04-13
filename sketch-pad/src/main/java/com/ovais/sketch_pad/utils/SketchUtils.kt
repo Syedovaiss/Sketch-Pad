@@ -3,7 +3,7 @@ package com.ovais.sketch_pad.utils
 import androidx.compose.ui.graphics.Color
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 
-fun distanceToSegment(
+internal fun distanceToSegment(
     px: Float, py: Float,
     x1: Float, y1: Float,
     x2: Float, y2: Float
@@ -31,7 +31,7 @@ fun distanceToSegment(
     return kotlin.math.sqrt(dx * dx + dy * dy)
 }
 
-fun eraseAt(
+internal fun eraseAt(
     strokes: MutableList<ActiveStroke>,
     x: Float,
     y: Float,

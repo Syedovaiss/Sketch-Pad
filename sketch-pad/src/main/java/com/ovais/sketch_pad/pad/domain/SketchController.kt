@@ -13,15 +13,12 @@ class SketchController {
 
     val _strokes = mutableStateListOf<ActiveStroke>()
     val strokes: List<ActiveStroke> get() = _strokes
-
     private val undone = ArrayDeque<ActiveStroke>()
 
-    // SDK State moved here for better flexibility & ViewModel integration
     var toolMode by mutableStateOf(ToolMode.DRAW)
     var brushColor by mutableStateOf(Color.Black)
     var brushWidth by mutableFloatStateOf(6f)
 
-    // Event callback for host apps/ViewModels
     var onEvent: ((SketchEvent) -> Unit)? = null
 
     fun setStrokes(newStrokes: List<ActiveStroke>) {
