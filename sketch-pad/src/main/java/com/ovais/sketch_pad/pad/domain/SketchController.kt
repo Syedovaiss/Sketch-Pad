@@ -13,6 +13,11 @@ import com.ovais.sketch_pad.pad.data.ToolMode
 import java.util.UUID
 import kotlin.collections.ArrayDeque
 
+/**
+ * The central engine for the Sketch Pad.
+ * It manages the list of strokes, undo/redo history, tool modes, and coordinate transformations.
+ * Use this in your ViewModel to persist the sketch state across configuration changes.
+ */
 class SketchController {
 
     private val _strokes = mutableStateListOf<ActiveStroke>()
@@ -49,6 +54,8 @@ class SketchController {
 
     /**
      * Resets the controller for a new sketch session.
+     * Clears all strokes, history, and resets the canvas scale and translation.
+     * @param id A unique identifier for the new sketch.
      */
     fun newSketch(id: String = UUID.randomUUID().toString()) {
         sketchId = id
@@ -77,6 +84,10 @@ class SketchController {
         onEvent?.invoke(SketchEvent.StrokeAdded(stroke))
     }
 
+    /**
+     * Retrieves or creates a [Path] for the given [ActiveStroke].
+     * Uses an internal [pathCache] to avoid redundant [Path] object allocations during rendering.
+     */
     fun getPathFor(stroke: ActiveStroke): Path {
         return pathCache.getOrPut(stroke.id) {
             Path().apply {
@@ -140,6 +151,10 @@ class SketchController {
         }
     }
 
+    /**
+     * Performs a smart erasure at the given coordinates.
+     * Checks for proximity to any existing stroke segments.
+     */
     fun eraseAt(x: Float, y: Float) {
         for (i in _strokes.indices.reversed()) {
             val stroke = _strokes[i]

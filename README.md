@@ -1,19 +1,39 @@
 # Sketch-Pad SDK 🎨
 
+<p align="left">
+  <a href="https://jitpack.io/#Syedovaiss/Sketch-Pad"><img src="https://jitpack.io/v/Syedovaiss/Sketch-Pad.svg" alt="JitPack"></a>
+  <img src="https://img.shields.io/badge/version-1.0.3-green" alt="Version">
+  <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build">
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License"></a>
+</p>
+
 A professional-grade, high-performance, and highly customizable Android drawing library built with **Jetpack Compose**. Designed for infinite creativity, from simple signatures to complex illustrations.
+
+## 📺 Demo
+
+### [**🎥 Click to Watch the Demo Video (demo.webm)**](./demo.webm)
+
+<p align="center">
+  <video width="100%" height="auto" controls autoplay loop muted>
+    <source src="./demo.webm" type="video/webm">
+    Your browser does not support the video tag.
+  </video>
+  <br/>
+  <em>Note: If the video player is not rendering in your IDE, please click the link above to open the video file directly.</em>
+</p>
 
 ## ✨ Key Features
 
-- **🚀 Infinite Canvas:** Pan and pinch-to-zoom across an endless drawing surface.
-- **📏 Canvas Sizes:** Support for standard paper sizes (**A3, A4**), **Screen** size, or **Free/Infinite** mode.
+- **🚀 GPU-Accelerated Performance:** Silky smooth panning and zooming using `graphicsLayer` and intelligent `Path` caching.
+- **📏 Flexible Canvas:** Support for standard paper sizes (**A3, A4**), **Screen** size, or **Free/Infinite** mode.
+- **🎨 Dynamic Theme Sync:** Automatic ink visibility adjustment (white turns black in light mode and vice versa) and theme-aware grids.
 - **🎞️ Robust History:** Complete **Undo/Redo** system for all actions (strokes, erasures, and clearing).
-- **🔲 Customizable Grid:** Toggleable background grid with adjustable size and color for precision drawing.
-- **🖌️ Smooth Rendering:** Quadratic Bézier curves for natural, pressure-sensitive feel.
-- **🧽 Smart Eraser:** Circular eraser cursor with dynamic z-index management.
+- **🔲 Precision Grid:** Toggleable background grid with adjustable size and color.
+- **🖌️ Smooth Rendering:** Quadratic Bézier curves for a natural drawing feel.
+- **🧽 Smart Eraser:** Circular eraser cursor with proximity-based stroke removal.
 - **🌈 Professional Color Picker:** Integrated HSV picker for unlimited color selection.
-- **📤 High-Res Export:** Generate **ImageBitmaps** with customizable density, background, and grid visibility.
-- **🌓 Theme Aware:** Full support for **Dark Mode** with auto-adapting default colors and grid.
-- **📱 Broad Compatibility:** Optimized for Android 7.0 (API 24) and above.
+- **📤 Pro-Grade Export:** Export your work as **High-Res Images**, **PDFs**, **SVGs**, or **JSON** for later editing.
+- **💾 Session Management:** Easily save and load sketch data to/from local storage or databases.
 
 ## 🚀 Installation
 
@@ -36,7 +56,8 @@ In your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.Syedovaiss:Sketch-Pad:<latest-version>")
+    // Check the JitPack badge at the top for the latest version
+    implementation("com.github.ovais:sketchpad:1.0.3")
 }
 ```
 
@@ -56,46 +77,46 @@ fun MyDrawingScreen() {
 }
 ```
 
-### Advanced Configuration
-Fine-tune the experience using `SketchToolbarOptions` and `SketchController`:
+### 🛠️ Professional Usage
+
+#### ViewModel Integration (Best Practice)
+For the best UX, host the `SketchController` in your `ViewModel` to survive configuration changes (like theme switching or rotation):
 
 ```kotlin
-val controller = remember { SketchController() }
+@HiltViewModel
+class SketchViewModel @Inject constructor() : ViewModel() {
+    val controller = SketchController()
+    
+    // Manage your save/load logic here...
+}
 
-SketchPad(
-    controller = controller,
-    toolbarOptions = SketchToolbarOptions(
-        showSave = true,
-        showDownloadImage = true,
-        showColorPalette = true
-    ),
-    onDownloadImage = { strokes ->
-        // Generate a high-res bitmap for export
-        val bitmap = generateBitmap(
-            strokes = strokes,
-            width = 2480,  // A4 width at 300 DPI
-            height = 3508, // A4 height at 300 DPI
-            density = 3f,  // High-DPI scaling
-            canvasSize = CanvasSize.A4
-        )
-        // Save your bitmap to storage...
-    }
-)
+@Composable
+fun SketchScreen(viewModel: SketchViewModel) {
+    SketchPad(
+        controller = viewModel.controller,
+        onSave = { strokes -> viewModel.saveDraft(strokes) }
+    )
+}
 ```
 
-### Professional Export (`generateBitmap`)
-The SDK provides a powerful headless rendering engine:
+#### Professional Exporting
+Exporting to multiple formats is built-in via `SketchExporter`:
 
 ```kotlin
-val bitmap = generateBitmap(
+val file = SketchExporter.exportToFile(
+    context = context,
     strokes = controller.strokes,
-    width = 1920,
-    height = 1080,
-    backgroundColor = Color.White,
-    gridEnabled = false,
-    canvasSize = CanvasSize.Screen
+    canvasSize = CanvasSize.A4,
+    fileType = SketchFileType.PDF, // Or SVG, JSON, etc.
+    backgroundColor = Color.White
 )
 ```
+
+### ⚡ Performance Optimization
+The SDK is built for speed:
+- **`graphicsLayer`**: Used for zero-lag panning/zooming.
+- **Path Caching**: Strokes are cached as `Path` objects in the controller to avoid redundant allocations.
+- **Contrast Correction**: Exported files automatically adjust stroke colors to ensure visibility on the chosen background.
 
 ## 📋 Requirements
 - **Minimum SDK:** 24 (Android 7.0)
