@@ -28,6 +28,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -77,8 +78,9 @@ fun SketchPad(
     controller: SketchController = remember { SketchController() },
     backgroundColor: Color = Color.Unspecified,
     showToolbar: Boolean = true,
+    toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
-    dialogs: SketchPadDialogs = SketchPadDialogs.Default,
+    onClear: () -> Unit = {},
     onSave: (List<ActiveStroke>) -> Unit = {},
     onDownloadFile: (List<ActiveStroke>) -> Unit = {},
     onDownloadImage: (List<ActiveStroke>) -> Unit = {},
@@ -88,10 +90,18 @@ fun SketchPad(
         if (isDark) Color(0xFF1C1B1F) else Color.White
     } else backgroundColor
 
-    var toolMode by remember { mutableStateOf(ToolMode.DRAW) }
+    // Sync controller with theme defaults if not manually set
+    LaunchedEffect(isDark) {
+        if (controller.brushColor == Color.Black && isDark) {
+            controller.brushColor = Color.White
+        } else if (controller.brushColor == Color.White && !isDark) {
+            controller.brushColor = Color.Black
+        }
+    }
 
-    var brushColor by remember { mutableStateOf(if (isDark) Color.White else Color.Black) }
-    var brushWidth by remember { mutableFloatStateOf(6f) }
+    val toolMode = controller.toolMode
+    val brushColor = controller.brushColor
+    val brushWidth = controller.brushWidth
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -103,7 +113,6 @@ fun SketchPad(
     var isErasing by remember { mutableStateOf(false) }
     var eraserPosition by remember { mutableStateOf<Offset?>(null) }
 
-    var showClearDialog by remember { mutableStateOf(false) }
     var showColorPicker by remember { mutableStateOf(false) }
 
     val activePoints = remember { mutableStateListOf<SketchPoint>() }
@@ -119,7 +128,7 @@ fun SketchPad(
                     )
                     .padding(20.dp)
             ) {
-                val controller = rememberColorPickerController()
+                    val colorPickerController = rememberColorPickerController()
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -128,9 +137,9 @@ fun SketchPad(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
-                        controller = controller,
+                        controller = colorPickerController,
                         onColorChanged = { envelope ->
-                            brushColor = envelope.color
+                            controller.brushColor = envelope.color
                         }
                     )
 
@@ -140,27 +149,6 @@ fun SketchPad(
                 }
             }
         }
-    }
-
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text(dialogs.clearTitle) },
-            text = { Text(dialogs.clearMessage) },
-            confirmButton = {
-                TextButton(onClick = {
-                    controller.clear()
-                    showClearDialog = false
-                }) {
-                    Text(dialogs.confirmText)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text(dialogs.dismissText)
-                }
-            }
-        )
     }
 
     Box(
@@ -268,30 +256,71 @@ fun SketchPad(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-
-                    ToolButton(icons.drawIcon, toolMode == ToolMode.DRAW) {
-                        toolMode = ToolMode.DRAW
-                        isErasing = false
-                        eraserPosition = null
+                    if (toolbarOptions.showDraw) {
+                        ToolButton(
+                            icon = icons.drawIcon,
+                            selected = toolMode == ToolMode.DRAW
+                        ) {
+                            controller.toolMode = ToolMode.DRAW
+                            isErasing = false
+                            eraserPosition = null
+                        }
                     }
 
-                    ToolButton(icons.eraseIcon, toolMode == ToolMode.ERASE) {
-                        toolMode = ToolMode.ERASE
-                        isErasing = false
-                        eraserPosition = null
+                    if (toolbarOptions.showErase) {
+                        ToolButton(
+                            icon = icons.eraseIcon,
+                            selected = toolMode == ToolMode.ERASE
+                        ) {
+                            controller.toolMode = ToolMode.ERASE
+                            isErasing = false
+                            eraserPosition = null
+                        }
                     }
 
-                    ToolButton(icons.undoIcon, false) { controller.undo() }
-                    ToolButton(icons.redoIcon, false) { controller.redo() }
+                    if (toolbarOptions.showUndo) {
+                        ToolButton(icon = icons.undoIcon, selected = false) {
+                            controller.undo()
+                        }
+                    }
 
-                    ToolButton(icons.clearIcon, false) { showClearDialog = true }
+                    if (toolbarOptions.showRedo) {
+                        ToolButton(icon = icons.redoIcon, selected = false) {
+                            controller.redo()
+                        }
+                    }
 
-                    ToolButton(icons.saveIcon, false) { onSave(controller.strokes) }
-                    ToolButton(icons.downloadFile, false) { onDownloadFile(controller.strokes) }
-                    ToolButton(icons.downloadImage, false) { onDownloadImage(controller.strokes) }
+                    if (toolbarOptions.showClear) {
+                        ToolButton(icon = icons.clearIcon, selected = false) {
+                            onClear()
+                        }
+                    }
 
-                    ToolButton(icons.settingsIcon, toolbarExpanded) {
-                        toolbarExpanded = !toolbarExpanded
+                    if (toolbarOptions.showSave) {
+                        ToolButton(icon = icons.saveIcon, selected = false) {
+                            onSave(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showDownloadFile) {
+                        ToolButton(icon = icons.downloadFile, selected = false) {
+                            onDownloadFile(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showDownloadImage) {
+                        ToolButton(icon = icons.downloadImage, selected = false) {
+                            onDownloadImage(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showSettings) {
+                        ToolButton(
+                            icon = icons.settingsIcon,
+                            selected = toolbarExpanded
+                        ) {
+                            toolbarExpanded = !toolbarExpanded
+                        }
                     }
                 }
 
@@ -312,7 +341,7 @@ fun SketchPad(
                                     .background(color, CircleShape)
                                     .pointerInput(Unit) {
                                         detectTapGestures {
-                                            brushColor = color
+                                            controller.brushColor = color
                                         }
                                     }
                             )
@@ -349,7 +378,7 @@ fun SketchPad(
 
                     Slider(
                         value = brushWidth,
-                        onValueChange = { brushWidth = it },
+                        onValueChange = { controller.brushWidth = it },
                         valueRange = 2f..40f
                     )
                 }
@@ -491,6 +520,22 @@ private fun EraserCursor(
     }
 }
 
+data class SketchToolbarOptions(
+    val showDraw: Boolean = true,
+    val showErase: Boolean = true,
+    val showUndo: Boolean = true,
+    val showRedo: Boolean = true,
+    val showClear: Boolean = true,
+    val showSave: Boolean = true,
+    val showDownloadFile: Boolean = true,
+    val showDownloadImage: Boolean = true,
+    val showSettings: Boolean = true
+) {
+    companion object {
+        val Default = SketchToolbarOptions()
+    }
+}
+
 data class SketchPadIcons(
     val drawIcon: Int = R.drawable.ic_draw,
     val eraseIcon: Int = R.drawable.ic_erase,
@@ -504,16 +549,5 @@ data class SketchPadIcons(
 ) {
     companion object {
         val Default = SketchPadIcons()
-    }
-}
-
-data class SketchPadDialogs(
-    val clearTitle: String = "Clear Canvas",
-    val clearMessage: String = "Are you sure you want to clear everything? This cannot be undone.",
-    val confirmText: String = "Clear",
-    val dismissText: String = "Cancel"
-) {
-    companion object {
-        val Default = SketchPadDialogs()
     }
 }

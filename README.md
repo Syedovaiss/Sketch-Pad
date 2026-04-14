@@ -34,7 +34,7 @@ Add this to your app module's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.Syedovaiss:Sketch-Pad:1.0.0")
+    implementation("com.github.Syedovaiss:Sketch-Pad:<latest-version>")
 }
 ```
 

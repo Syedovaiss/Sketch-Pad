@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketch_pad.pad.presentation.SketchPad
+import com.ovais.sketch_pad.pad.presentation.SketchToolbarOptions
 import com.ovais.sketchpad.core.ui.theme.SketchPadTheme
 import com.ovais.sketchpad.utils.exportAndSavePdf
 import com.ovais.sketchpad.utils.exportImage
@@ -50,6 +51,13 @@ fun SketchScreen(
 
     SketchPad(
         controller = controller,
+        toolbarOptions = SketchToolbarOptions(
+            showDownloadImage = false,
+            showSettings = false
+        ),
+        onClear = {
+            controller.clear()
+        },
         onSave = {
             viewModel.saveDraft(it)
         },
