@@ -5,14 +5,22 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.ToolMode
+import java.util.UUID
 import kotlin.collections.ArrayDeque
 
+/**
+ * The central engine for the Sketch Pad.
+ * It manages the list of strokes, undo/redo history, tool modes, and coordinate transformations.
+ * Use this in your ViewModel to persist the sketch state across configuration changes.
+ */
 class SketchController {
 
-    val _strokes = mutableStateListOf<ActiveStroke>()
+    private val _strokes = mutableStateListOf<ActiveStroke>()
     val strokes: List<ActiveStroke> get() = _strokes
 
     private val history = ArrayDeque<HistoryAction>()
@@ -21,6 +29,17 @@ class SketchController {
     var toolMode by mutableStateOf(ToolMode.DRAW)
     var brushColor by mutableStateOf(Color.Black)
     var brushWidth by mutableFloatStateOf(6f)
+    var isGridEnabled by mutableStateOf(true)
+
+    // Current sketch session ID
+    var sketchId by mutableStateOf("default")
+
+    // Centralized transform state for performance and sync
+    var scale by mutableFloatStateOf(1f)
+    var translation by mutableStateOf(Offset.Zero)
+
+    // Cache paths to avoid re-creating them every frame
+    private val pathCache = mutableMapOf<String, Path>()
 
     var onEvent: ((SketchEvent) -> Unit)? = null
 
@@ -30,7 +49,28 @@ class SketchController {
         data class Clear(val strokes: List<ActiveStroke>) : HistoryAction()
     }
 
-    fun setStrokes(newStrokes: List<ActiveStroke>) {
+    fun canUndo(): Boolean = history.isNotEmpty()
+    fun canRedo(): Boolean = redoStack.isNotEmpty()
+
+    /**
+     * Resets the controller for a new sketch session.
+     * Clears all strokes, history, and resets the canvas scale and translation.
+     * @param id A unique identifier for the new sketch.
+     */
+    fun newSketch(id: String = UUID.randomUUID().toString()) {
+        sketchId = id
+        _strokes.clear()
+        pathCache.clear()
+        history.clear()
+        redoStack.clear()
+        translation = Offset.Zero
+        scale = 1f
+        onEvent?.invoke(SketchEvent.Clear)
+    }
+
+    fun setStrokes(newStrokes: List<ActiveStroke>, id: String = "default") {
+        sketchId = id
+        pathCache.clear()
         _strokes.clear()
         _strokes.addAll(newStrokes)
         history.clear()
@@ -44,6 +84,28 @@ class SketchController {
         onEvent?.invoke(SketchEvent.StrokeAdded(stroke))
     }
 
+    /**
+     * Retrieves or creates a [Path] for the given [ActiveStroke].
+     * Uses an internal [pathCache] to avoid redundant [Path] object allocations during rendering.
+     */
+    fun getPathFor(stroke: ActiveStroke): Path {
+        return pathCache.getOrPut(stroke.id) {
+            Path().apply {
+                if (stroke.points.isNotEmpty()) {
+                    moveTo(stroke.points.first().x, stroke.points.first().y)
+                    for (i in 1 until stroke.points.size) {
+                        val prev = stroke.points[i - 1]
+                        val curr = stroke.points[i]
+                        val midX = (prev.x + curr.x) / 2f
+                        val midY = (prev.y + curr.y) / 2f
+                        quadraticTo(prev.x, prev.y, midX, midY)
+                    }
+                    lineTo(stroke.points.last().x, stroke.points.last().y)
+                }
+            }
+        }
+    }
+
     fun undo() {
         if (history.isEmpty()) return
         val action = history.removeLast()
@@ -52,6 +114,7 @@ class SketchController {
         when (action) {
             is HistoryAction.AddStroke -> {
                 _strokes.remove(action.stroke)
+                pathCache.remove(action.stroke.id)
                 onEvent?.invoke(SketchEvent.Undo(action.stroke))
             }
             is HistoryAction.RemoveStroke -> {
@@ -77,15 +140,21 @@ class SketchController {
             }
             is HistoryAction.RemoveStroke -> {
                 _strokes.remove(action.stroke)
+                pathCache.remove(action.stroke.id)
                 onEvent?.invoke(SketchEvent.StrokeRemoved(action.stroke))
             }
             is HistoryAction.Clear -> {
                 _strokes.clear()
+                pathCache.clear()
                 onEvent?.invoke(SketchEvent.Clear)
             }
         }
     }
 
+    /**
+     * Performs a smart erasure at the given coordinates.
+     * Checks for proximity to any existing stroke segments.
+     */
     fun eraseAt(x: Float, y: Float) {
         for (i in _strokes.indices.reversed()) {
             val stroke = _strokes[i]
@@ -98,6 +167,7 @@ class SketchController {
                 )
                 if (d < 30f + stroke.strokeWidth) {
                     val removedStroke = _strokes.removeAt(i)
+                    pathCache.remove(removedStroke.id)
                     history.addLast(HistoryAction.RemoveStroke(removedStroke, i))
                     redoStack.clear()
                     onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
@@ -111,6 +181,7 @@ class SketchController {
         if (_strokes.isEmpty()) return
         val snapshot = _strokes.toList()
         _strokes.clear()
+        pathCache.clear()
         history.addLast(HistoryAction.Clear(snapshot))
         redoStack.clear()
         onEvent?.invoke(SketchEvent.Clear)

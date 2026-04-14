@@ -3,10 +3,9 @@ package com.ovais.sketchpad.features.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ovais.sketch_pad.pad.data.ActiveStroke
-import com.ovais.sketch_pad.pad.data.ToolMode
+import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketchpad.features.domain.SketchRepo
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -17,9 +16,7 @@ class SketchViewModel @Inject constructor(
     private val json: Json
 ) : ViewModel() {
 
-
-    private val _state = MutableStateFlow(SketchState())
-    val state = _state
+    val controller = SketchController()
 
     init {
         loadDraft()
@@ -28,29 +25,27 @@ class SketchViewModel @Inject constructor(
     private fun loadDraft() {
         viewModelScope.launch {
             val data = repo.load("default")
-
             if (data != null) {
-                val strokes = json.decodeFromString<List<ActiveStroke>>(data)
-
-                _state.value = _state.value.copy(
-                    strokes = strokes
-                )
+                try {
+                    val strokes = json.decodeFromString<List<ActiveStroke>>(data)
+                    controller.setStrokes(strokes, "default")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
 
-    fun saveDraft(strokes: List<ActiveStroke>) {
+    fun saveDraft(strokes: List<ActiveStroke>, id: String = "default") {
         viewModelScope.launch {
-            val jsonStr = json.encodeToString(
-                strokes
-            )
+            val jsonStr = json.encodeToString(strokes)
+            repo.save(id, jsonStr)
+        }
+    }
 
-            repo.save("default", jsonStr)
+    fun clearDraft(id: String = "default") {
+        viewModelScope.launch {
+            repo.save(id, "[]")
         }
     }
 }
-
-data class SketchState(
-    val strokes: List<ActiveStroke> = emptyList(),
-    val toolMode: ToolMode = ToolMode.DRAW
-)
