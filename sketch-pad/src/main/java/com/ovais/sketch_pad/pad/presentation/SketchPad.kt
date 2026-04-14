@@ -44,6 +44,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,7 +107,7 @@ fun SketchPad(
     val brushWidth = controller.brushWidth
 
     var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var translation by remember { mutableStateOf(Offset.Zero) }
 
     var toolbarExpanded by remember { mutableStateOf(false) }
 
@@ -159,47 +162,51 @@ fun SketchPad(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
                 .pointerInput(toolMode) {
-
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
 
                             if (toolMode == ToolMode.ERASE) {
                                 isErasing = true
+                                val adjustedPos = (pos - translation) / scale
                                 eraserPosition = pos
-                                controller.eraseAt(pos.x, pos.y)
-                            } else {
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                            } else if (toolMode == ToolMode.DRAW) {
+                                val adjustedPos = (pos - translation) / scale
                                 activePoints.clear()
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                                activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
                             }
                         },
 
-                        onDrag = { change, _ ->
+                        onDrag = { change, dragAmount ->
                             val pos = change.position
+                            change.consume()
 
                             if (!isPointerDown) return@detectDragGestures
 
-                            if (toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos
-                                controller.eraseAt(pos.x, pos.y)
+                            if (toolMode == ToolMode.MOVE) {
+                                translation += dragAmount
                                 return@detectDragGestures
                             }
 
-                            val last = activePoints.lastOrNull()
+                            val adjustedPos = (pos - translation) / scale
 
-                            if (last == null || hypot(
-                                    (pos.x - last.x).toDouble(),
-                                    (pos.y - last.y).toDouble()
-                                ) > 1.5
-                            ) {
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                            if (toolMode == ToolMode.ERASE) {
+                                eraserPosition = pos
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                                return@detectDragGestures
+                            }
+
+                            if (toolMode == ToolMode.DRAW) {
+                                val last = activePoints.lastOrNull()
+                                if (last == null || hypot(
+                                        (adjustedPos.x - last.x).toDouble(),
+                                        (adjustedPos.y - last.y).toDouble()
+                                    ) > (1.0 / scale)
+                                ) {
+                                    activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
+                                }
                             }
                         },
 
@@ -226,12 +233,16 @@ fun SketchPad(
                     )
                 }
         ) {
+            withTransform({
+                translate(translation.x, translation.y)
+                scale(scale, scale, Offset.Zero)
+            }) {
+                controller.strokes.forEach { stroke ->
+                    drawSmoothStroke(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                }
 
-            controller.strokes.forEach { stroke ->
-                drawSmoothStroke(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                drawSmoothStroke(activePoints, brushColor, brushWidth)
             }
-
-            drawSmoothStroke(activePoints, brushColor, brushWidth)
         }
 
         EraserCursor(
@@ -256,6 +267,17 @@ fun SketchPad(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    if (toolbarOptions.showMove) {
+                        ToolButton(
+                            icon = icons.moveIcon,
+                            selected = toolMode == ToolMode.MOVE
+                        ) {
+                            controller.toolMode = ToolMode.MOVE
+                            isErasing = false
+                            eraserPosition = null
+                        }
+                    }
+
                     if (toolbarOptions.showDraw) {
                         ToolButton(
                             icon = icons.drawIcon,
@@ -474,15 +496,18 @@ private fun EraserCursor(
     val pos = positionProvider() ?: return
     val isDark = isSystemInDarkTheme()
 
+    val cursorSize = if (isErasing) 38.dp else 32.dp
+
     Box(
         modifier = Modifier
             .offset {
+                val px = cursorSize.toPx()
                 androidx.compose.ui.unit.IntOffset(
-                    pos.x.toInt(),
-                    pos.y.toInt()
+                    (pos.x - px / 2f).toInt(),
+                    (pos.y - px / 2f).toInt()
                 )
             }
-            .size(if (isErasing) 38.dp else 32.dp)
+            .size(cursorSize)
             .background(
                 if (isDark) Color.DarkGray.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f),
                 CircleShape
@@ -521,6 +546,7 @@ private fun EraserCursor(
 }
 
 data class SketchToolbarOptions(
+    val showMove: Boolean = true,
     val showDraw: Boolean = true,
     val showErase: Boolean = true,
     val showUndo: Boolean = true,
@@ -537,6 +563,7 @@ data class SketchToolbarOptions(
 }
 
 data class SketchPadIcons(
+    val moveIcon: Int = R.drawable.ic_move,
     val drawIcon: Int = R.drawable.ic_draw,
     val eraseIcon: Int = R.drawable.ic_erase,
     val undoIcon: Int = R.drawable.ic_undo,
