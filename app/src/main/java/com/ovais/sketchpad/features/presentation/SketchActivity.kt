@@ -51,10 +51,7 @@ fun SketchScreen(
 
     SketchPad(
         controller = controller,
-        toolbarOptions = SketchToolbarOptions(
-            showDownloadImage = false,
-            showSettings = false
-        ),
+        toolbarOptions = SketchToolbarOptions(),
         onClear = {
             controller.clear()
         },

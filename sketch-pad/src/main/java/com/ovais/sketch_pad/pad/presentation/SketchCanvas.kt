@@ -3,6 +3,8 @@ package com.ovais.sketch_pad.pad.presentation
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -11,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +27,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -33,14 +37,13 @@ import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchPoint
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.domain.SketchController
-import com.ovais.sketch_pad.utils.eraseAt
 import com.ovais.sketch_pad.utils.toArgbLong
 import com.ovais.sketch_pad.utils.toColor
 import kotlin.math.hypot
 
 /**
  * A "headless" Sketch Canvas that handles drawing logic and gestures.
- * Use this to build custom drawing UIs.
+ * Supports infinite canvas panning and zooming.
  */
 @Composable
 fun SketchCanvas(
@@ -50,12 +53,24 @@ fun SketchCanvas(
     onStrokeStarted: () -> Unit = {},
     onStrokeEnded: (ActiveStroke) -> Unit = {}
 ) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var translation by remember { mutableStateOf(Offset.Zero) }
+
     var isPointerDown by remember { mutableStateOf(false) }
     var isErasing by remember { mutableStateOf(false) }
     var eraserPosition by remember { mutableStateOf<Offset?>(null) }
     val activePoints = remember { mutableStateListOf<SketchPoint>() }
 
-    Box(modifier.background(backgroundColor)) {
+    val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+        scale *= zoomChange
+        translation += offsetChange
+    }
+
+    Box(
+        modifier
+            .background(backgroundColor)
+            .transformable(state = transformState)
+    ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -63,33 +78,46 @@ fun SketchCanvas(
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
+                            val adjustedPos = (pos - translation) / scale
+
                             if (controller.toolMode == ToolMode.ERASE) {
                                 isErasing = true
                                 eraserPosition = pos
-                                eraseAt(controller._strokes, pos.x, pos.y)
-                            } else {
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                            } else if (controller.toolMode == ToolMode.DRAW) {
                                 onStrokeStarted()
                                 activePoints.clear()
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                                activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
                             }
                         },
-                        onDrag = { change, _ ->
+                        onDrag = { change, dragAmount ->
                             val pos = change.position
+                            change.consume()
+
                             if (!isPointerDown) return@detectDragGestures
 
-                            if (controller.toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos
-                                eraseAt(controller._strokes, pos.x, pos.y)
+                            if (controller.toolMode == ToolMode.MOVE) {
+                                translation += dragAmount
                                 return@detectDragGestures
                             }
 
-                            val last = activePoints.lastOrNull()
-                            if (last == null || hypot(
-                                    (pos.x - last.x).toDouble(),
-                                    (pos.y - last.y).toDouble()
-                                ) > 1.5
-                            ) {
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                            val adjustedPos = (pos - translation) / scale
+
+                            if (controller.toolMode == ToolMode.ERASE) {
+                                eraserPosition = pos
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                                return@detectDragGestures
+                            }
+
+                            if (controller.toolMode == ToolMode.DRAW) {
+                                val last = activePoints.lastOrNull()
+                                if (last == null || hypot(
+                                        (adjustedPos.x - last.x).toDouble(),
+                                        (adjustedPos.y - last.y).toDouble()
+                                    ) > (1.0 / scale)
+                                ) {
+                                    activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
+                                }
                             }
                         },
                         onDragEnd = {
@@ -111,13 +139,18 @@ fun SketchCanvas(
                     )
                 }
         ) {
-            // Draw existing strokes
-            controller.strokes.forEach { stroke ->
-                drawSmoothPath(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
-            }
-            // Draw current active stroke
-            if (controller.toolMode == ToolMode.DRAW) {
-                drawSmoothPath(activePoints, controller.brushColor, controller.brushWidth)
+            withTransform({
+                translate(translation.x, translation.y)
+                scale(scale, scale, Offset.Zero)
+            }) {
+                // Draw existing strokes
+                controller.strokes.forEach { stroke ->
+                    drawSmoothPath(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                }
+                // Draw current active stroke
+                if (controller.toolMode == ToolMode.DRAW) {
+                    drawSmoothPath(activePoints, controller.brushColor, controller.brushWidth)
+                }
             }
         }
 

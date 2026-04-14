@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -37,10 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -48,6 +54,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
@@ -118,6 +126,11 @@ fun SketchPad(
 
     val activePoints = remember { mutableStateListOf<SketchPoint>() }
 
+    val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+        scale *= zoomChange
+        translation += offsetChange
+    }
+
     if (showColorPicker) {
         Dialog(onDismissRequest = { showColorPicker = false }) {
             Box(
@@ -156,11 +169,12 @@ fun SketchPad(
         modifier
             .fillMaxSize()
             .background(finalBackgroundColor)
+            .transformable(state = transformState)
     ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(toolMode) {
+                .pointerInput(toolMode, translation, scale) {
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
@@ -231,12 +245,18 @@ fun SketchPad(
                     )
                 }
         ) {
+            drawGrid(translation, scale, isDark)
+
             withTransform({
                 translate(translation.x, translation.y)
                 scale(scale, scale, Offset.Zero)
             }) {
                 controller.strokes.forEach { stroke ->
-                    drawSmoothStroke(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                    drawSmoothStroke(
+                        points = stroke.points,
+                        color = stroke.color.toColor(),
+                        width = stroke.strokeWidth
+                    )
                 }
 
                 drawSmoothStroke(activePoints, brushColor, brushWidth)
@@ -258,7 +278,7 @@ fun SketchPad(
                     .padding(10.dp)
                     .background(toolbarBg, RoundedCornerShape(14.dp))
                     .padding(10.dp)
-                    .zIndex(100f)
+                    .zIndex(200f)
             ) {
 
                 Row(
@@ -299,19 +319,28 @@ fun SketchPad(
                     }
 
                     if (toolbarOptions.showUndo) {
-                        ToolButton(icon = icons.undoIcon, selected = false) {
+                        ToolButton(
+                            icon = icons.undoIcon,
+                            selected = false,
+                            enabled = controller.canUndo()
+                        ) {
                             controller.undo()
                         }
                     }
 
                     if (toolbarOptions.showRedo) {
-                        ToolButton(icon = icons.redoIcon, selected = false) {
+                        ToolButton(
+                            icon = icons.redoIcon,
+                            selected = false,
+                            enabled = controller.canRedo()
+                        ) {
                             controller.redo()
                         }
                     }
 
                     if (toolbarOptions.showClear) {
                         ToolButton(icon = icons.clearIcon, selected = false) {
+                            controller.clear()
                             onClear()
                         }
                     }
@@ -346,61 +375,65 @@ fun SketchPad(
 
                 if (toolbarExpanded) {
 
-                    Spacer(Modifier.height(10.dp))
+                    if (toolbarOptions.showColorPalette) {
+                        Spacer(Modifier.height(10.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val colorPalette = if (isDark) {
-                            listOf(Color.White, Color.Red, Color.Green, Color.Blue, Color.Yellow)
-                        } else {
-                            listOf(Color.Black, Color.Red, Color.Green, Color.Blue, Color.Yellow)
-                        }
-                        colorPalette.forEach { color ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val colorPalette = if (isDark) {
+                                listOf(Color.White, Color.Red, Color.Green, Color.Blue, Color.Yellow)
+                            } else {
+                                listOf(Color.Black, Color.Red, Color.Green, Color.Blue, Color.Yellow)
+                            }
+                            colorPalette.forEach { color ->
+                                Box(
+                                    Modifier
+                                        .size(34.dp)
+                                        .background(color, CircleShape)
+                                        .pointerInput(Unit) {
+                                            detectTapGestures {
+                                                controller.brushColor = color
+                                            }
+                                        }
+                                )
+                            }
+
+                            // Color Picker Trigger
                             Box(
                                 Modifier
                                     .size(34.dp)
-                                    .background(color, CircleShape)
+                                    .background(
+                                        brushColor,
+                                        CircleShape
+                                    )
+                                    .border(2.dp, if (isDark) Color.White else Color.Black, CircleShape)
                                     .pointerInput(Unit) {
                                         detectTapGestures {
-                                            controller.brushColor = color
+                                            showColorPicker = true
                                         }
-                                    }
-                            )
-                        }
-
-                        // Color Picker Trigger
-                        Box(
-                            Modifier
-                                .size(34.dp)
-                                .background(
-                                    brushColor,
-                                    CircleShape
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.color_palette),
+                                    contentDescription = "Pick Color",
+                                    tint = if (brushColor.luminance() > 0.5f) Color.Black else Color.White,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                .border(2.dp, if (isDark) Color.White else Color.Black, CircleShape)
-                                .pointerInput(Unit) {
-                                    detectTapGestures {
-                                        showColorPicker = true
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.color_palette),
-                                contentDescription = "Pick Color",
-                                tint = if (brushColor.luminance() > 0.5f) Color.Black else Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            }
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    if (toolbarOptions.showBrushSize) {
+                        Spacer(Modifier.height(10.dp))
 
-                    Text("Brush Size: ${brushWidth.toInt()}", color = Color.White)
+                        Text("Brush Size: ${brushWidth.toInt()}", color = Color.White)
 
-                    Slider(
-                        value = brushWidth,
-                        onValueChange = { controller.brushWidth = it },
-                        valueRange = 2f..40f
-                    )
+                        Slider(
+                            value = brushWidth,
+                            onValueChange = { controller.brushWidth = it },
+                            valueRange = 2f..40f
+                        )
+                    }
                 }
             }
         }
@@ -445,25 +478,83 @@ private fun DrawScope.drawSmoothStroke(
     )
 }
 
+private fun DrawScope.drawGrid(translation: Offset, scale: Float, isDark: Boolean) {
+    val gridSize = 50f * scale
+    val gridColor = if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.05f)
+
+    val startX = translation.x % gridSize
+    val startY = translation.y % gridSize
+
+    var x = startX
+    while (x < size.width) {
+        drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
+        x += gridSize
+    }
+
+    var y = startY
+    while (y < size.height) {
+        drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+        y += gridSize
+    }
+}
+
+/**
+ * Generates a bitmap from a list of strokes.
+ */
+fun generateBitmap(
+    strokes: List<ActiveStroke>,
+    width: Int,
+    height: Int,
+    backgroundColor: Color = Color.White
+): ImageBitmap {
+    val bitmap = ImageBitmap(width, height)
+    val canvas = Canvas(bitmap)
+    val canvasDrawScope = CanvasDrawScope()
+
+    canvasDrawScope.draw(
+        density = Density(1f),
+        layoutDirection = LayoutDirection.Ltr,
+        canvas = canvas,
+        size = Size(width.toFloat(), height.toFloat())
+    ) {
+        // Draw background
+        drawRect(backgroundColor)
+
+        // Draw all strokes
+        strokes.forEach { stroke ->
+            drawSmoothStroke(
+                points = stroke.points,
+                color = stroke.color.toColor(),
+                width = stroke.strokeWidth
+            )
+        }
+    }
+
+    return bitmap
+}
+
 @Composable
 private fun ToolButton(
     icon: Any,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.background(
             if (selected) Color(0xFF2E7D32) else Color.Transparent,
             RoundedCornerShape(10.dp)
         )
     ) {
+        val tint = if (selected) Color.White else if (enabled) Color.LightGray else Color.DarkGray
         when (icon) {
             is Int -> {
                 Icon(
                     painter = painterResource(id = icon),
                     contentDescription = null,
-                    tint = if (selected) Color.White else Color.LightGray
+                    tint = tint
                 )
             }
 
@@ -471,14 +562,14 @@ private fun ToolButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (selected) Color.White else Color.LightGray
+                    tint = tint
                 )
             }
 
             is String -> {
                 Text(
                     text = icon,
-                    color = if (selected) Color.White else Color.LightGray
+                    color = tint
                 )
             }
         }

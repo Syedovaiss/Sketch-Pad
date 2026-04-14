@@ -30,6 +30,9 @@ class SketchController {
         data class Clear(val strokes: List<ActiveStroke>) : HistoryAction()
     }
 
+    fun canUndo(): Boolean = history.isNotEmpty()
+    fun canRedo(): Boolean = redoStack.isNotEmpty()
+
     fun setStrokes(newStrokes: List<ActiveStroke>) {
         _strokes.clear()
         _strokes.addAll(newStrokes)
