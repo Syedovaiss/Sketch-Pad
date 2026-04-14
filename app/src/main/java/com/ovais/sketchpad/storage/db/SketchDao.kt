@@ -12,7 +12,7 @@ interface SketchDao {
     @Query("SELECT * FROM sketch_draft WHERE id = :id")
     suspend fun getDraft(id: String): SketchDraftEntity?
 
-    @Insert(onConflict = OnConflictStrategy.Companion.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveDraft(entity: SketchDraftEntity)
 
     @Query("DELETE FROM sketch_draft WHERE id = :id")

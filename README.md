@@ -1,22 +1,24 @@
 # Sketch-Pad SDK 🎨
 
-A powerful, lightweight, and highly customizable Android drawing library built with **Jetpack Compose**. Perfect for apps requiring sketch features, signatures, or whiteboard functionality.
+A professional-grade, high-performance, and highly customizable Android drawing library built with **Jetpack Compose**. Designed for infinite creativity, from simple signatures to complex illustrations.
 
-## ✨ Features
+## ✨ Key Features
 
-- **Smooth Drawing:** Uses quadratic Bézier curves for high-quality, smooth stroke rendering.
-- **Undo/Redo Support:** Fully integrated history management via `SketchController`.
-- **Eraser Tool:** Smart erasure logic with adjustable thresholds.
-- **Dark Mode Support:** Automatically adapts its theme and default colors for Dark Mode.
-- **Color Picker:** Integrated HSV Color Picker (via Skydoves) for unlimited color choices.
-- **Export Options:** Easily save your sketches as **PNG** images or **PDF** documents.
-- **ViewModel Ready:** State is decoupled from the UI, making it compatible with ViewModels and configuration changes.
-- **Highly Customizable:** Override icons, colors, and dialog texts to match your app's branding.
+- **🚀 Infinite Canvas:** Pan and pinch-to-zoom across an endless drawing surface.
+- **📏 Canvas Sizes:** Support for standard paper sizes (**A3, A4**), **Screen** size, or **Free/Infinite** mode.
+- **🎞️ Robust History:** Complete **Undo/Redo** system for all actions (strokes, erasures, and clearing).
+- **🔲 Customizable Grid:** Toggleable background grid with adjustable size and color for precision drawing.
+- **🖌️ Smooth Rendering:** Quadratic Bézier curves for natural, pressure-sensitive feel.
+- **🧽 Smart Eraser:** Circular eraser cursor with dynamic z-index management.
+- **🌈 Professional Color Picker:** Integrated HSV picker for unlimited color selection.
+- **📤 High-Res Export:** Generate **ImageBitmaps** with customizable density, background, and grid visibility.
+- **🌓 Theme Aware:** Full support for **Dark Mode** with auto-adapting default colors and grid.
+- **📱 Broad Compatibility:** Optimized for Android 7.0 (API 24) and above.
 
 ## 🚀 Installation
 
 ### 1. Add JitPack to your project
-In your `settings.gradle.kts` (or `build.gradle` at the root):
+In your `settings.gradle.kts`:
 
 ```kotlin
 dependencyResolutionManagement {
@@ -30,7 +32,7 @@ dependencyResolutionManagement {
 ```
 
 ### 2. Add the dependency
-Add this to your app module's `build.gradle.kts`:
+In your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
@@ -41,97 +43,64 @@ dependencies {
 ## 🛠️ Usage
 
 ### Basic Implementation
-Simply add the `SketchPad` composable to your UI:
+Add the `SketchPad` composable with zero configuration:
 
 ```kotlin
 @Composable
 fun MyDrawingScreen() {
     SketchPad(
         modifier = Modifier.fillMaxSize(),
-        onSave = { strokes ->
-            // Handle saved strokes (List<ActiveStroke>)
-        }
+        canvasSize = CanvasSize.A4, // Optional: Set a fixed paper size
+        gridEnabled = true         // Optional: Show background grid
     )
 }
 ```
 
-### Using the Controller
-For programmatic control over undo, redo, and clearing the canvas:
+### Advanced Configuration
+Fine-tune the experience using `SketchToolbarOptions` and `SketchController`:
 
 ```kotlin
 val controller = remember { SketchController() }
-
-Column {
-    Row {
-        Button(onClick = { controller.undo() }) { Text("Undo") }
-        Button(onClick = { controller.redo() }) { Text("Redo") }
-    }
-
-    SketchPad(
-        controller = controller,
-        modifier = Modifier.weight(1f)
-    )
-}
-```
-
-### Headless Canvas (`SketchCanvas`)
-If you want to build your own custom toolbar and only need the drawing surface, use `SketchCanvas`:
-
-```kotlin
-val controller = remember { SketchController() }
-
-Box(modifier = Modifier.fillMaxSize()) {
-    SketchCanvas(
-        controller = controller,
-        modifier = Modifier.fillMaxSize(),
-        onStrokeStarted = { /* Logic when drawing starts */ },
-        onStrokeEnded = { stroke -> /* Logic when stroke is finished */ }
-    )
-    
-    // Add your custom buttons, sliders, etc. here
-}
-```
-
-### Exporting Content
-You can use the built-in utility functions to save the sketch:
-
-```kotlin
-val context = LocalContext.current
 
 SketchPad(
-    onSave = { strokes ->
-        // 1. Export as PDF
-        exportAndSavePdf(context, strokes)
-        
-        // 2. Export as PNG
-        val bitmap = exportImage(strokes)
-        saveImageToGallery(context, bitmap)
+    controller = controller,
+    toolbarOptions = SketchToolbarOptions(
+        showSave = true,
+        showDownloadImage = true,
+        showColorPalette = true
+    ),
+    onDownloadImage = { strokes ->
+        // Generate a high-res bitmap for export
+        val bitmap = generateBitmap(
+            strokes = strokes,
+            width = 2480,  // A4 width at 300 DPI
+            height = 3508, // A4 height at 300 DPI
+            density = 3f,  // High-DPI scaling
+            canvasSize = CanvasSize.A4
+        )
+        // Save your bitmap to storage...
     }
 )
 ```
 
-## 🎨 Customization
-
-### Custom Icons & Dialogs
-You can customize the UI by passing `SketchPadIcons` or `SketchPadDialogs`:
+### Professional Export (`generateBitmap`)
+The SDK provides a powerful headless rendering engine:
 
 ```kotlin
-SketchPad(
-    icons = SketchPadIcons(
-        drawIcon = R.drawable.my_custom_draw,
-        eraseIcon = R.drawable.my_custom_erase
-    ),
-    dialogs = SketchPadDialogs(
-        clearTitle = "Delete everything?",
-        confirmText = "Yes, Clear"
-    )
+val bitmap = generateBitmap(
+    strokes = controller.strokes,
+    width = 1920,
+    height = 1080,
+    backgroundColor = Color.White,
+    gridEnabled = false,
+    canvasSize = CanvasSize.Screen
 )
 ```
 
 ## 📋 Requirements
-- **Minimum SDK:** 26
-- **Jetpack Compose:** 1.4.0+
-- **Kotlin Serialization:** Required if you plan to persist stroke data.
+- **Minimum SDK:** 24 (Android 7.0)
+- **Jetpack Compose:** 1.5.0+
+- **Kotlin:** 1.9.0+
 
 ## 📄 License
 ```text
