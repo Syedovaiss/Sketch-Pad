@@ -22,12 +22,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -43,7 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,7 +55,9 @@ import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.ovais.sketch_pad.R
 import com.ovais.sketch_pad.pad.data.ActiveStroke
+import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchPoint
+import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketch_pad.utils.toArgbLong
@@ -77,8 +79,9 @@ fun SketchPad(
     controller: SketchController = remember { SketchController() },
     backgroundColor: Color = Color.Unspecified,
     showToolbar: Boolean = true,
+    toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
-    dialogs: SketchPadDialogs = SketchPadDialogs.Default,
+    onClear: () -> Unit = {},
     onSave: (List<ActiveStroke>) -> Unit = {},
     onDownloadFile: (List<ActiveStroke>) -> Unit = {},
     onDownloadImage: (List<ActiveStroke>) -> Unit = {},
@@ -88,13 +91,21 @@ fun SketchPad(
         if (isDark) Color(0xFF1C1B1F) else Color.White
     } else backgroundColor
 
-    var toolMode by remember { mutableStateOf(ToolMode.DRAW) }
+    // Sync controller with theme defaults if not manually set
+    LaunchedEffect(isDark) {
+        if (controller.brushColor == Color.Black && isDark) {
+            controller.brushColor = Color.White
+        } else if (controller.brushColor == Color.White && !isDark) {
+            controller.brushColor = Color.Black
+        }
+    }
 
-    var brushColor by remember { mutableStateOf(if (isDark) Color.White else Color.Black) }
-    var brushWidth by remember { mutableFloatStateOf(6f) }
+    val toolMode = controller.toolMode
+    val brushColor = controller.brushColor
+    val brushWidth = controller.brushWidth
 
     var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var translation by remember { mutableStateOf(Offset.Zero) }
 
     var toolbarExpanded by remember { mutableStateOf(false) }
 
@@ -103,7 +114,6 @@ fun SketchPad(
     var isErasing by remember { mutableStateOf(false) }
     var eraserPosition by remember { mutableStateOf<Offset?>(null) }
 
-    var showClearDialog by remember { mutableStateOf(false) }
     var showColorPicker by remember { mutableStateOf(false) }
 
     val activePoints = remember { mutableStateListOf<SketchPoint>() }
@@ -119,7 +129,7 @@ fun SketchPad(
                     )
                     .padding(20.dp)
             ) {
-                val controller = rememberColorPickerController()
+                val colorPickerController = rememberColorPickerController()
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -128,9 +138,9 @@ fun SketchPad(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
-                        controller = controller,
+                        controller = colorPickerController,
                         onColorChanged = { envelope ->
-                            brushColor = envelope.color
+                            controller.brushColor = envelope.color
                         }
                     )
 
@@ -142,27 +152,6 @@ fun SketchPad(
         }
     }
 
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text(dialogs.clearTitle) },
-            text = { Text(dialogs.clearMessage) },
-            confirmButton = {
-                TextButton(onClick = {
-                    controller.clear()
-                    showClearDialog = false
-                }) {
-                    Text(dialogs.confirmText)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text(dialogs.dismissText)
-                }
-            }
-        )
-    }
-
     Box(
         modifier
             .fillMaxSize()
@@ -171,47 +160,51 @@ fun SketchPad(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
                 .pointerInput(toolMode) {
-
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
 
                             if (toolMode == ToolMode.ERASE) {
                                 isErasing = true
+                                val adjustedPos = (pos - translation) / scale
                                 eraserPosition = pos
-                                controller.eraseAt(pos.x, pos.y)
-                            } else {
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                            } else if (toolMode == ToolMode.DRAW) {
+                                val adjustedPos = (pos - translation) / scale
                                 activePoints.clear()
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                                activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
                             }
                         },
 
-                        onDrag = { change, _ ->
+                        onDrag = { change, dragAmount ->
                             val pos = change.position
+                            change.consume()
 
                             if (!isPointerDown) return@detectDragGestures
 
-                            if (toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos
-                                controller.eraseAt(pos.x, pos.y)
+                            if (toolMode == ToolMode.MOVE) {
+                                translation += dragAmount
                                 return@detectDragGestures
                             }
 
-                            val last = activePoints.lastOrNull()
+                            val adjustedPos = (pos - translation) / scale
 
-                            if (last == null || hypot(
-                                    (pos.x - last.x).toDouble(),
-                                    (pos.y - last.y).toDouble()
-                                ) > 1.5
-                            ) {
-                                activePoints.add(SketchPoint(pos.x, pos.y))
+                            if (toolMode == ToolMode.ERASE) {
+                                eraserPosition = pos
+                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                                return@detectDragGestures
+                            }
+
+                            if (toolMode == ToolMode.DRAW) {
+                                val last = activePoints.lastOrNull()
+                                if (last == null || hypot(
+                                        (adjustedPos.x - last.x).toDouble(),
+                                        (adjustedPos.y - last.y).toDouble()
+                                    ) > (1.0 / scale)
+                                ) {
+                                    activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
+                                }
                             }
                         },
 
@@ -238,12 +231,16 @@ fun SketchPad(
                     )
                 }
         ) {
+            withTransform({
+                translate(translation.x, translation.y)
+                scale(scale, scale, Offset.Zero)
+            }) {
+                controller.strokes.forEach { stroke ->
+                    drawSmoothStroke(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                }
 
-            controller.strokes.forEach { stroke ->
-                drawSmoothStroke(stroke.points, stroke.color.toColor(), stroke.strokeWidth)
+                drawSmoothStroke(activePoints, brushColor, brushWidth)
             }
-
-            drawSmoothStroke(activePoints, brushColor, brushWidth)
         }
 
         EraserCursor(
@@ -268,30 +265,82 @@ fun SketchPad(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-
-                    ToolButton(icons.drawIcon, toolMode == ToolMode.DRAW) {
-                        toolMode = ToolMode.DRAW
-                        isErasing = false
-                        eraserPosition = null
+                    if (toolbarOptions.showMove) {
+                        ToolButton(
+                            icon = icons.moveIcon,
+                            selected = toolMode == ToolMode.MOVE
+                        ) {
+                            controller.toolMode = ToolMode.MOVE
+                            isErasing = false
+                            eraserPosition = null
+                        }
                     }
 
-                    ToolButton(icons.eraseIcon, toolMode == ToolMode.ERASE) {
-                        toolMode = ToolMode.ERASE
-                        isErasing = false
-                        eraserPosition = null
+                    if (toolbarOptions.showDraw) {
+                        ToolButton(
+                            icon = icons.drawIcon,
+                            selected = toolMode == ToolMode.DRAW
+                        ) {
+                            controller.toolMode = ToolMode.DRAW
+                            isErasing = false
+                            eraserPosition = null
+                        }
                     }
 
-                    ToolButton(icons.undoIcon, false) { controller.undo() }
-                    ToolButton(icons.redoIcon, false) { controller.redo() }
+                    if (toolbarOptions.showErase) {
+                        ToolButton(
+                            icon = icons.eraseIcon,
+                            selected = toolMode == ToolMode.ERASE
+                        ) {
+                            controller.toolMode = ToolMode.ERASE
+                            isErasing = false
+                            eraserPosition = null
+                        }
+                    }
 
-                    ToolButton(icons.clearIcon, false) { showClearDialog = true }
+                    if (toolbarOptions.showUndo) {
+                        ToolButton(icon = icons.undoIcon, selected = false) {
+                            controller.undo()
+                        }
+                    }
 
-                    ToolButton(icons.saveIcon, false) { onSave(controller.strokes) }
-                    ToolButton(icons.downloadFile, false) { onDownloadFile(controller.strokes) }
-                    ToolButton(icons.downloadImage, false) { onDownloadImage(controller.strokes) }
+                    if (toolbarOptions.showRedo) {
+                        ToolButton(icon = icons.redoIcon, selected = false) {
+                            controller.redo()
+                        }
+                    }
 
-                    ToolButton(icons.settingsIcon, toolbarExpanded) {
-                        toolbarExpanded = !toolbarExpanded
+                    if (toolbarOptions.showClear) {
+                        ToolButton(icon = icons.clearIcon, selected = false) {
+                            onClear()
+                        }
+                    }
+
+                    if (toolbarOptions.showSave) {
+                        ToolButton(icon = icons.saveIcon, selected = false) {
+                            onSave(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showDownloadFile) {
+                        ToolButton(icon = icons.downloadFile, selected = false) {
+                            onDownloadFile(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showDownloadImage) {
+                        ToolButton(icon = icons.downloadImage, selected = false) {
+                            onDownloadImage(controller.strokes)
+                        }
+                    }
+
+                    if (toolbarOptions.showSettings) {
+                        ToolButton(
+                            icon = icons.settingsIcon,
+                            selected = toolbarExpanded
+                        ) {
+                            toolbarExpanded = !toolbarExpanded
+                        }
                     }
                 }
 
@@ -312,7 +361,7 @@ fun SketchPad(
                                     .background(color, CircleShape)
                                     .pointerInput(Unit) {
                                         detectTapGestures {
-                                            brushColor = color
+                                            controller.brushColor = color
                                         }
                                     }
                             )
@@ -349,7 +398,7 @@ fun SketchPad(
 
                     Slider(
                         value = brushWidth,
-                        onValueChange = { brushWidth = it },
+                        onValueChange = { controller.brushWidth = it },
                         valueRange = 2f..40f
                     )
                 }
@@ -445,15 +494,18 @@ private fun EraserCursor(
     val pos = positionProvider() ?: return
     val isDark = isSystemInDarkTheme()
 
+    val cursorSize = if (isErasing) 38.dp else 32.dp
+
     Box(
         modifier = Modifier
             .offset {
+                val px = cursorSize.toPx()
                 androidx.compose.ui.unit.IntOffset(
-                    pos.x.toInt(),
-                    pos.y.toInt()
+                    (pos.x - px / 2f).toInt(),
+                    (pos.y - px / 2f).toInt()
                 )
             }
-            .size(if (isErasing) 38.dp else 32.dp)
+            .size(cursorSize)
             .background(
                 if (isDark) Color.DarkGray.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f),
                 CircleShape
@@ -488,32 +540,5 @@ private fun EraserCursor(
                 )
             }
         }
-    }
-}
-
-data class SketchPadIcons(
-    val drawIcon: Int = R.drawable.ic_draw,
-    val eraseIcon: Int = R.drawable.ic_erase,
-    val undoIcon: Int = R.drawable.ic_undo,
-    val redoIcon: Int = R.drawable.ic_redo,
-    val clearIcon: Int = R.drawable.ic_clear,
-    val saveIcon: Int = R.drawable.ic_save,
-    val settingsIcon: Int = R.drawable.ic_settings,
-    val downloadFile: Int = R.drawable.download_file,
-    val downloadImage: Int = R.drawable.download_image,
-) {
-    companion object {
-        val Default = SketchPadIcons()
-    }
-}
-
-data class SketchPadDialogs(
-    val clearTitle: String = "Clear Canvas",
-    val clearMessage: String = "Are you sure you want to clear everything? This cannot be undone.",
-    val confirmText: String = "Clear",
-    val dismissText: String = "Cancel"
-) {
-    companion object {
-        val Default = SketchPadDialogs()
     }
 }

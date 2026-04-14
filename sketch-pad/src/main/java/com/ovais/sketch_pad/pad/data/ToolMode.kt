@@ -5,5 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class ToolMode {
     DRAW,
-    ERASE
+    ERASE,
+    MOVE
 }
