@@ -61,7 +61,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "com.github.ovais"
                 artifactId = "sketchpad"
-                version = "1.0.0"
+                version = "1.0.2"
 
                 from(components["release"])
             }
