@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -44,10 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,7 +55,9 @@ import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.ovais.sketch_pad.R
 import com.ovais.sketch_pad.pad.data.ActiveStroke
+import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchPoint
+import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketch_pad.utils.toArgbLong
@@ -131,7 +129,7 @@ fun SketchPad(
                     )
                     .padding(20.dp)
             ) {
-                    val colorPickerController = rememberColorPickerController()
+                val colorPickerController = rememberColorPickerController()
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -542,39 +540,5 @@ private fun EraserCursor(
                 )
             }
         }
-    }
-}
-
-data class SketchToolbarOptions(
-    val showMove: Boolean = true,
-    val showDraw: Boolean = true,
-    val showErase: Boolean = true,
-    val showUndo: Boolean = true,
-    val showRedo: Boolean = true,
-    val showClear: Boolean = true,
-    val showSave: Boolean = true,
-    val showDownloadFile: Boolean = true,
-    val showDownloadImage: Boolean = true,
-    val showSettings: Boolean = true
-) {
-    companion object {
-        val Default = SketchToolbarOptions()
-    }
-}
-
-data class SketchPadIcons(
-    val moveIcon: Int = R.drawable.ic_move,
-    val drawIcon: Int = R.drawable.ic_draw,
-    val eraseIcon: Int = R.drawable.ic_erase,
-    val undoIcon: Int = R.drawable.ic_undo,
-    val redoIcon: Int = R.drawable.ic_redo,
-    val clearIcon: Int = R.drawable.ic_clear,
-    val saveIcon: Int = R.drawable.ic_save,
-    val settingsIcon: Int = R.drawable.ic_settings,
-    val downloadFile: Int = R.drawable.download_file,
-    val downloadImage: Int = R.drawable.download_image,
-) {
-    companion object {
-        val Default = SketchPadIcons()
     }
 }

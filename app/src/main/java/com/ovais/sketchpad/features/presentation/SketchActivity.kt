@@ -10,9 +10,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketch_pad.pad.presentation.SketchPad
-import com.ovais.sketch_pad.pad.presentation.SketchToolbarOptions
 import com.ovais.sketchpad.core.ui.theme.SketchPadTheme
 import com.ovais.sketchpad.utils.exportAndSavePdf
 import com.ovais.sketchpad.utils.exportImage

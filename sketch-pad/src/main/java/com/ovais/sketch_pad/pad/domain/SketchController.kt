@@ -13,7 +13,9 @@ class SketchController {
 
     val _strokes = mutableStateListOf<ActiveStroke>()
     val strokes: List<ActiveStroke> get() = _strokes
-    private val undone = ArrayDeque<ActiveStroke>()
+
+    private val history = mutableListOf<HistoryAction>()
+    private val redoStack = mutableListOf<HistoryAction>()
 
     var toolMode by mutableStateOf(ToolMode.DRAW)
     var brushColor by mutableStateOf(Color.Black)
@@ -21,49 +23,84 @@ class SketchController {
 
     var onEvent: ((SketchEvent) -> Unit)? = null
 
+    private sealed class HistoryAction {
+        data class AddStroke(val stroke: ActiveStroke) : HistoryAction()
+        data class RemoveStroke(val stroke: ActiveStroke, val index: Int) : HistoryAction()
+        data class Clear(val strokes: List<ActiveStroke>) : HistoryAction()
+    }
+
     fun setStrokes(newStrokes: List<ActiveStroke>) {
         _strokes.clear()
         _strokes.addAll(newStrokes)
-        undone.clear()
+        history.clear()
+        redoStack.clear()
     }
 
     fun add(stroke: ActiveStroke) {
         _strokes.add(stroke)
-        undone.clear()
+        history.add(HistoryAction.AddStroke(stroke))
+        redoStack.clear()
         onEvent?.invoke(SketchEvent.StrokeAdded(stroke))
     }
 
     fun undo() {
-        if (_strokes.isNotEmpty()) {
-            val last = _strokes.removeAt(_strokes.size - 1)
-            undone.addLast(last)
-            onEvent?.invoke(SketchEvent.Undo(last))
+        if (history.isEmpty()) return
+        val action = history.removeAt(history.size - 1)
+        redoStack.add(action)
+
+        when (action) {
+            is HistoryAction.AddStroke -> {
+                _strokes.remove(action.stroke)
+                onEvent?.invoke(SketchEvent.Undo(action.stroke))
+            }
+            is HistoryAction.RemoveStroke -> {
+                _strokes.add(action.index, action.stroke)
+                // We can trigger a Redo event here or a custom one, but for simplicity:
+                onEvent?.invoke(SketchEvent.Redo(action.stroke))
+            }
+            is HistoryAction.Clear -> {
+                _strokes.addAll(action.strokes)
+                onEvent?.invoke(SketchEvent.Redo(action.strokes.lastOrNull() ?: return))
+            }
         }
     }
 
     fun redo() {
-        if (undone.isNotEmpty()) {
-            val stroke = undone.removeLast()
-            _strokes.add(stroke)
-            onEvent?.invoke(SketchEvent.Redo(stroke))
+        if (redoStack.isEmpty()) return
+        val action = redoStack.removeAt(redoStack.size - 1)
+        history.add(action)
+
+        when (action) {
+            is HistoryAction.AddStroke -> {
+                _strokes.add(action.stroke)
+                onEvent?.invoke(SketchEvent.StrokeAdded(action.stroke))
+            }
+            is HistoryAction.RemoveStroke -> {
+                _strokes.remove(action.stroke)
+                onEvent?.invoke(SketchEvent.StrokeRemoved(action.stroke))
+            }
+            is HistoryAction.Clear -> {
+                _strokes.clear()
+                onEvent?.invoke(SketchEvent.Clear)
+            }
         }
     }
 
     fun eraseAt(x: Float, y: Float) {
-        val iterator = _strokes.iterator()
-        while (iterator.hasNext()) {
-            val stroke = iterator.next()
+        for (i in _strokes.indices.reversed()) {
+            val stroke = _strokes[i]
             val pts = stroke.points
-            for (i in 0 until pts.size - 1) {
+            for (j in 0 until pts.size - 1) {
                 val d = com.ovais.sketch_pad.utils.distanceToSegment(
                     x, y,
-                    pts[i].x, pts[i].y,
-                    pts[i + 1].x, pts[i + 1].y
+                    pts[j].x, pts[j].y,
+                    pts[j + 1].x, pts[j + 1].y
                 )
                 if (d < 30f + stroke.strokeWidth) {
-                    iterator.remove()
-                    undone.clear() // Erasing clears redo history as it's a new state change
-                    onEvent?.invoke(SketchEvent.StrokeRemoved(stroke))
+                    val removedStroke = _strokes.removeAt(i)
+                    history.add(HistoryAction.RemoveStroke(removedStroke, i))
+                    redoStack.clear()
+                    onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
                     return
                 }
             }
@@ -72,8 +109,10 @@ class SketchController {
 
     fun clear() {
         if (_strokes.isEmpty()) return
+        val snapshot = _strokes.toList()
         _strokes.clear()
-        undone.clear()
+        history.add(HistoryAction.Clear(snapshot))
+        redoStack.clear()
         onEvent?.invoke(SketchEvent.Clear)
     }
 }
