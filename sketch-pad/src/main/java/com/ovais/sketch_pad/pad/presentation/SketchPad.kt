@@ -76,6 +76,9 @@ import com.ovais.sketch_pad.utils.toArgbLong
 import com.ovais.sketch_pad.utils.toColor
 import java.io.File
 import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * A professional-grade, reusable SketchPad component for drawing and erasing with infinite canvas support.
@@ -450,14 +453,21 @@ fun SketchPad(
                                 else -> null
                             }
 
+                            val exportSpec = if (paperSizeLimit == null) {
+                                calculateStrokeExportSpec(controller.strokes)
+                            } else {
+                                null
+                            }
+
                             val bitmap = generateBitmap(
                                 strokes = controller.strokes,
-                                width = paperSizeLimit?.width?.toInt() ?: 1080,
-                                height = paperSizeLimit?.height?.toInt() ?: 1920,
+                                width = paperSizeLimit?.width?.toInt() ?: exportSpec!!.width,
+                                height = paperSizeLimit?.height?.toInt() ?: exportSpec!!.height,
                                 backgroundColor = if (isDark) Color(0xFF1C1B1F) else Color.White,
                                 gridEnabled = controller.isGridEnabled,
                                 gridColor = finalGridColor,
                                 gridSize = gridSize,
+                                translation = exportSpec?.translation ?: Offset.Zero,
                                 density = density,
                                 canvasSize = canvasSize
                             )
@@ -598,10 +608,59 @@ private fun DrawScope.drawGrid(
     }
 }
 
+private data class StrokeExportSpec(
+    val width: Int,
+    val height: Int,
+    val translation: Offset
+)
+
+private fun calculateStrokeExportSpec(
+    strokes: List<ActiveStroke>,
+    padding: Float = 50f,
+    fallbackWidth: Int = 1080,
+    fallbackHeight: Int = 1920
+): StrokeExportSpec {
+    if (strokes.isEmpty()) {
+        return StrokeExportSpec(
+            width = fallbackWidth,
+            height = fallbackHeight,
+            translation = Offset.Zero
+        )
+    }
+
+    var minX = Float.POSITIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+
+    strokes.forEach { stroke ->
+        stroke.points.forEach { point ->
+            minX = min(minX, point.x)
+            minY = min(minY, point.y)
+            maxX = max(maxX, point.x)
+            maxY = max(maxY, point.y)
+        }
+    }
+
+    if (!minX.isFinite() || !minY.isFinite() || !maxX.isFinite() || !maxY.isFinite()) {
+        return StrokeExportSpec(
+            width = fallbackWidth,
+            height = fallbackHeight,
+            translation = Offset.Zero
+        )
+    }
+
+    val width = (maxX - minX + 2f * padding).toInt().coerceAtLeast(1)
+    val height = (maxY - minY + 2f * padding).toInt().coerceAtLeast(1)
+    val translation = Offset(-minX + padding, -minY + padding)
+
+    return StrokeExportSpec(width = width, height = height, translation = translation)
+}
+
 fun generateBitmap(
     strokes: List<ActiveStroke>,
-    width: Int,
-    height: Int,
+    width: Int? = null,
+    height: Int? = null,
     backgroundColor: Color = Color.White,
     gridEnabled: Boolean = false,
     gridSize: Float = 50f,
@@ -611,7 +670,41 @@ fun generateBitmap(
     density: Float = 1f,
     canvasSize: CanvasSize = CanvasSize.Free
 ): ImageBitmap {
-    val bitmap = ImageBitmap(width, height)
+    val maxBitmapDimension = 8192
+    val maxBitmapPixels = 40_000_000L
+    val fixedCanvasSize = when (canvasSize) {
+        is CanvasSize.A4 -> canvasSize.size
+        is CanvasSize.A3 -> canvasSize.size
+        is CanvasSize.Custom -> canvasSize.size
+        is CanvasSize.Screen, is CanvasSize.Free -> null
+    }
+    val exportSpec = if (fixedCanvasSize == null) calculateStrokeExportSpec(strokes) else null
+    val resolvedWidth = width ?: fixedCanvasSize?.width?.toInt() ?: exportSpec!!.width
+    val resolvedHeight = height ?: fixedCanvasSize?.height?.toInt() ?: exportSpec!!.height
+    val resolvedTranslation = if (translation == Offset.Zero) {
+        exportSpec?.translation ?: Offset.Zero
+    } else {
+        translation
+    }
+    val baseWidth = resolvedWidth.coerceAtLeast(1)
+    val baseHeight = resolvedHeight.coerceAtLeast(1)
+    val downscaleByDimension = min(
+        maxBitmapDimension.toFloat() / baseWidth.toFloat(),
+        maxBitmapDimension.toFloat() / baseHeight.toFloat()
+    ).coerceAtMost(1f)
+    val currentPixels = baseWidth.toLong() * baseHeight.toLong()
+    val downscaleByPixels = if (currentPixels > maxBitmapPixels) {
+        sqrt(maxBitmapPixels.toDouble() / currentPixels.toDouble()).toFloat()
+    } else {
+        1f
+    }
+    val outputScaleFactor = min(downscaleByDimension, downscaleByPixels).coerceAtMost(1f)
+    val finalWidth = (baseWidth * outputScaleFactor).toInt().coerceAtLeast(1)
+    val finalHeight = (baseHeight * outputScaleFactor).toInt().coerceAtLeast(1)
+    val effectiveScale = scale * outputScaleFactor
+    val effectiveTranslation = resolvedTranslation * outputScaleFactor
+
+    val bitmap = ImageBitmap(finalWidth, finalHeight)
     val canvas = androidx.compose.ui.graphics.Canvas(bitmap)
     val canvasDrawScope = CanvasDrawScope()
 
@@ -619,15 +712,15 @@ fun generateBitmap(
         density = Density(density),
         layoutDirection = LayoutDirection.Ltr,
         canvas = canvas,
-        size = Size(width.toFloat(), height.toFloat())
+        size = Size(finalWidth.toFloat(), finalHeight.toFloat())
     ) {
         drawRect(backgroundColor)
         if (gridEnabled) {
-            drawGrid(translation, scale, gridColor, gridSize)
+            drawGrid(effectiveTranslation, effectiveScale, gridColor, gridSize)
         }
         withTransform({
-            translate(translation.x, translation.y)
-            scale(scale, scale, Offset.Zero)
+            translate(effectiveTranslation.x, effectiveTranslation.y)
+            scale(effectiveScale, effectiveScale, Offset.Zero)
         }) {
             val paperSize = when (canvasSize) {
                 is CanvasSize.A4 -> canvasSize.size

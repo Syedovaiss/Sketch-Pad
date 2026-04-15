@@ -47,8 +47,8 @@ object SketchExporter {
         if (strokes.isEmpty()) return Rect(0f, 0f, 1080f, 1920f)
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
-        var maxX = Float.MIN_VALUE
-        var maxY = Float.MIN_VALUE
+        var maxX = Float.NEGATIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
 
         strokes.forEach { stroke ->
             stroke.points.forEach { pt ->
