@@ -5,13 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketchpad.features.domain.SketchRepo
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
 
-@HiltViewModel
-class SketchViewModel @Inject constructor(
+class SketchViewModel(
     private val repo: SketchRepo,
     private val json: Json
 ) : ViewModel() {
