@@ -1,7 +1,16 @@
 package com.ovais.sketchpad.core
 
 import android.app.Application
-import dagger.hilt.android.HiltAndroidApp
+import com.ovais.sketchpad.di.appModule
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.startKoin
 
-@HiltAndroidApp
-class SketchPad : Application()
+class SketchPad : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        startKoin {
+            androidContext(this@SketchPad)
+            modules(appModule)
+        }
+    }
+}
