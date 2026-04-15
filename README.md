@@ -2,7 +2,7 @@
 
 <p align="left">
   <a href="https://jitpack.io/#Syedovaiss/Sketch-Pad"><img src="https://jitpack.io/v/Syedovaiss/Sketch-Pad.svg" alt="JitPack"></a>
-  <img src="https://img.shields.io/badge/version-1.0.3-green" alt="Version">
+  <img src="https://img.shields.io/badge/version-latest-green" alt="Version">
   <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build">
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License"></a>
 </p>
@@ -34,6 +34,7 @@ A professional-grade, high-performance, and highly customizable Android drawing 
 - **🌈 Professional Color Picker:** Integrated HSV picker for unlimited color selection.
 - **📤 Pro-Grade Export:** Export your work as **High-Res Images**, **PDFs**, **SVGs**, or **JSON** for later editing.
 - **💾 Session Management:** Easily save and load sketch data to/from local storage or databases.
+- **🎛️ Customizable Toolbar Selection:** Configure selected tool highlight color using `toolbarSelectionColor`.
 
 ## 🚀 Installation
 
@@ -72,7 +73,8 @@ fun MyDrawingScreen() {
     SketchPad(
         modifier = Modifier.fillMaxSize(),
         canvasSize = CanvasSize.A4, // Optional: Set a fixed paper size
-        gridEnabled = true         // Optional: Show background grid
+        gridEnabled = true,         // Optional: Show background grid
+        toolbarSelectionColor = Color(0xFFFF6F00) // Optional: selected tool color
     )
 }
 ```
@@ -83,8 +85,7 @@ fun MyDrawingScreen() {
 For the best UX, host the `SketchController` in your `ViewModel` to survive configuration changes (like theme switching or rotation):
 
 ```kotlin
-@HiltViewModel
-class SketchViewModel @Inject constructor() : ViewModel() {
+class SketchViewModel : ViewModel() {
     val controller = SketchController()
     
     // Manage your save/load logic here...
@@ -118,10 +119,16 @@ The SDK is built for speed:
 - **Path Caching**: Strokes are cached as `Path` objects in the controller to avoid redundant allocations.
 - **Contrast Correction**: Exported files automatically adjust stroke colors to ensure visibility on the chosen background.
 
+## 📝 Recent Improvements
+- Fixed draw coordinate alignment after switching from move mode back to draw mode.
+- Fixed eraser cursor position mismatch after canvas translation.
+- Added `toolbarSelectionColor` to customize selected tool highlight color.
+- Internal sample app migrated from Hilt to Koin for dependency injection.
+
 ## 📋 Requirements
 - **Minimum SDK:** 24 (Android 7.0)
-- **Jetpack Compose:** 1.5.0+
-- **Kotlin:** 1.9.0+
+- **Jetpack Compose:** Modern Compose stack (BOM based).
+- **Kotlin:** 2.2.0+
 
 ## 📄 License
 ```text
