@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
-    kotlin("plugin.serialization") version "2.3.20"
+    kotlin("plugin.serialization") version "2.2.0"
     id("maven-publish")
 }
 
@@ -61,7 +61,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 groupId = "com.github.ovais"
                 artifactId = "sketchpad"
-                version = "1.0.3"
+                version = "1.0.4"
 
                 from(components["release"])
             }
