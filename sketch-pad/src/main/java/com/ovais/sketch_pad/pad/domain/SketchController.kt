@@ -12,6 +12,7 @@ import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.ToolMode
 import java.util.UUID
 import kotlin.collections.ArrayDeque
+import kotlin.math.hypot
 
 /**
  * The central engine for the Sketch Pad.
@@ -119,11 +120,13 @@ class SketchController {
             }
             is HistoryAction.RemoveStroke -> {
                 _strokes.add(action.index, action.stroke)
-                onEvent?.invoke(SketchEvent.Redo(action.stroke))
+                onEvent?.invoke(SketchEvent.Undo(action.stroke))
             }
             is HistoryAction.Clear -> {
                 _strokes.addAll(action.strokes)
-                onEvent?.invoke(SketchEvent.Redo(action.strokes.lastOrNull() ?: return))
+                action.strokes.lastOrNull()?.let { restoredStroke ->
+                    onEvent?.invoke(SketchEvent.Undo(restoredStroke))
+                }
             }
         }
     }
@@ -159,6 +162,21 @@ class SketchController {
         for (i in _strokes.indices.reversed()) {
             val stroke = _strokes[i]
             val pts = stroke.points
+            if (pts.size == 1) {
+                val singlePoint = pts.first()
+                val d = hypot(
+                    (x - singlePoint.x).toDouble(),
+                    (y - singlePoint.y).toDouble()
+                ).toFloat()
+                if (d < 30f + stroke.strokeWidth) {
+                    val removedStroke = _strokes.removeAt(i)
+                    pathCache.remove(removedStroke.id)
+                    history.addLast(HistoryAction.RemoveStroke(removedStroke, i))
+                    redoStack.clear()
+                    onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
+                    return
+                }
+            }
             for (j in 0 until pts.size - 1) {
                 val d = com.ovais.sketch_pad.utils.distanceToSegment(
                     x, y,

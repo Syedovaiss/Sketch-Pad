@@ -1,6 +1,7 @@
 package com.ovais.sketch_pad.utils
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 
 internal fun distanceToSegment(
@@ -61,6 +62,6 @@ internal fun eraseAt(
 
 
 
-fun Color.toArgbLong(): Long = this.value.toLong()
+fun Color.toArgbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
-fun Long.toColor(): Color = Color(this.toULong())
+fun Long.toColor(): Color = Color(this.toInt())
