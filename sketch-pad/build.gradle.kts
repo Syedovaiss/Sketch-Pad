@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     kotlin("plugin.serialization") version "2.2.0"
     id("maven-publish")
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -39,6 +40,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    kotlinOptions {
+        jvmTarget = "11"
     }
 }
 

@@ -5,11 +5,11 @@ import com.ovais.sketchpad.di.appModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 
-class SketchPad : Application() {
+class SketchPadApp : Application() {
     override fun onCreate() {
         super.onCreate()
         startKoin {
-            androidContext(this@SketchPad)
+            androidContext(this@SketchPadApp)
             modules(appModule)
         }
     }
