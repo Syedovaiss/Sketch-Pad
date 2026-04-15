@@ -85,11 +85,11 @@ fun SketchCanvas(
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
-                            val adjustedPos = (pos - controller.translation) / controller.scale
+                            val adjustedPos = pos / controller.scale
 
                             if (controller.toolMode == ToolMode.ERASE) {
                                 isErasing = true
-                                eraserPosition = pos
+                                eraserPosition = pos + controller.translation
                                 controller.eraseAt(adjustedPos.x, adjustedPos.y)
                             } else if (controller.toolMode == ToolMode.DRAW) {
                                 onStrokeStarted()
@@ -108,10 +108,10 @@ fun SketchCanvas(
                                 return@detectDragGestures
                             }
 
-                            val adjustedPos = (pos - controller.translation) / controller.scale
+                            val adjustedPos = pos / controller.scale
 
                             if (controller.toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos
+                                eraserPosition = pos + controller.translation
                                 controller.eraseAt(adjustedPos.x, adjustedPos.y)
                                 return@detectDragGestures
                             }

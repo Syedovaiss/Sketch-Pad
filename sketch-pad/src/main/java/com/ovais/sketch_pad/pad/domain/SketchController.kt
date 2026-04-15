@@ -28,7 +28,7 @@ class SketchController {
 
     var toolMode by mutableStateOf(ToolMode.DRAW)
     var brushColor by mutableStateOf(Color.Black)
-    var brushWidth by mutableFloatStateOf(6f)
+    var brushWidth by mutableFloatStateOf(10f)
     var isGridEnabled by mutableStateOf(true)
 
     // Current sketch session ID

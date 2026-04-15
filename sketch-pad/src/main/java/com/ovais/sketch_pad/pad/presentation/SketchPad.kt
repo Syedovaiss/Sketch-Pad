@@ -50,10 +50,8 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
@@ -87,6 +85,7 @@ fun SketchPad(
     modifier: Modifier = Modifier,
     controller: SketchController = remember { SketchController() },
     backgroundColor: Color = Color.Unspecified,
+    toolbarSelectionColor: Color = Color(0xFF2E7D32),
     showToolbar: Boolean = true,
     toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
@@ -244,10 +243,10 @@ fun SketchPad(
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
-                            val adjustedPos = (pos - controller.translation) / controller.scale
+                            val adjustedPos = pos / controller.scale
                             if (toolMode == ToolMode.ERASE) {
                                 isErasing = true
-                                eraserPosition = pos
+                                eraserPosition = pos + controller.translation
                                 controller.eraseAt(adjustedPos.x, adjustedPos.y)
                             } else if (toolMode == ToolMode.DRAW) {
                                 activePoints.clear()
@@ -262,9 +261,9 @@ fun SketchPad(
                                 controller.translation += dragAmount
                                 return@detectDragGestures
                             }
-                            val adjustedPos = (pos - controller.translation) / controller.scale
+                            val adjustedPos = pos / controller.scale
                             if (toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos
+                                eraserPosition = pos + controller.translation
                                 controller.eraseAt(adjustedPos.x, adjustedPos.y)
                             } else if (toolMode == ToolMode.DRAW) {
                                 val last = activePoints.lastOrNull()
@@ -281,12 +280,12 @@ fun SketchPad(
                             isPointerDown = false
                             isErasing = false
                             eraserPosition = null
-                            if (toolMode == ToolMode.DRAW && activePoints.isNotEmpty()) {
+                            if (controller.toolMode == ToolMode.DRAW && activePoints.isNotEmpty()) {
                                 controller.add(
                                     ActiveStroke(
                                         points = activePoints.toList(),
-                                        color = brushColor.toArgbLong(),
-                                        strokeWidth = brushWidth
+                                        color = controller.brushColor.toArgbLong(),
+                                        strokeWidth = controller.brushWidth
                                     )
                                 )
                             }
@@ -376,21 +375,33 @@ fun SketchPad(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (toolbarOptions.showMove) {
-                        ToolButton(icon = icons.moveIcon, selected = toolMode == ToolMode.MOVE) {
+                        ToolButton(
+                            icon = icons.moveIcon,
+                            selected = toolMode == ToolMode.MOVE,
+                            selectedColor = toolbarSelectionColor
+                        ) {
                             controller.toolMode = ToolMode.MOVE
                             isErasing = false
                             eraserPosition = null
                         }
                     }
                     if (toolbarOptions.showDraw) {
-                        ToolButton(icon = icons.drawIcon, selected = toolMode == ToolMode.DRAW) {
+                        ToolButton(
+                            icon = icons.drawIcon,
+                            selected = toolMode == ToolMode.DRAW,
+                            selectedColor = toolbarSelectionColor
+                        ) {
                             controller.toolMode = ToolMode.DRAW
                             isErasing = false
                             eraserPosition = null
                         }
                     }
                     if (toolbarOptions.showErase) {
-                        ToolButton(icon = icons.eraseIcon, selected = toolMode == ToolMode.ERASE) {
+                        ToolButton(
+                            icon = icons.eraseIcon,
+                            selected = toolMode == ToolMode.ERASE,
+                            selectedColor = toolbarSelectionColor
+                        ) {
                             controller.toolMode = ToolMode.ERASE
                             isErasing = false
                             eraserPosition = null
@@ -642,6 +653,7 @@ fun generateBitmap(
 private fun ToolButton(
     icon: Any,
     selected: Boolean,
+    selectedColor: Color = Color(0xFF2E7D32),
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -649,7 +661,7 @@ private fun ToolButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.background(
-            if (selected) Color(0xFF2E7D32) else Color.Transparent,
+            if (selected) selectedColor else Color.Transparent,
             RoundedCornerShape(10.dp)
         )
     ) {
