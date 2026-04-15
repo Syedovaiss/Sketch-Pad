@@ -57,7 +57,7 @@ In your app's `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Check the JitPack badge at the top for the latest version
-    implementation("com.github.ovais:sketchpad:1.0.3")
+    implementation("com.github.Syedovaiss:Sketch-Pad:<latest-version>")
 }
 ```
 
