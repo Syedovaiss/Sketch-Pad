@@ -10,6 +10,7 @@ data class SketchToolbarOptions(
     val showSave: Boolean = true,
     val showDownloadFile: Boolean = true,
     val showDownloadImage: Boolean = true,
+    val showOrientation: Boolean = false,
     val showSettings: Boolean = true,
     val showColorPalette: Boolean = true,
     val showBrushSize: Boolean = true

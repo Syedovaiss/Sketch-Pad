@@ -1,5 +1,6 @@
 package com.ovais.sketchpad.features.presentation
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,6 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,11 +52,13 @@ import androidx.compose.ui.unit.sp
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.CanvasSize
 import com.ovais.sketch_pad.pad.data.SketchPadIcons
+import com.ovais.sketch_pad.pad.data.SketchOrientation
 import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import androidx.compose.foundation.layout.statusBarsPadding
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.presentation.SketchCanvas
 import com.ovais.sketch_pad.pad.presentation.SketchPad
+import com.ovais.sketch_pad.pad.presentation.SketchPadCallbacks
 import com.ovais.sketch_pad.pad.presentation.generateBitmap
 import com.ovais.sketch_pad.utils.decodeStrokesFromBase64
 import com.ovais.sketch_pad.utils.encodeStrokesToBase64
@@ -93,6 +98,7 @@ fun SketchScreen(viewModel: SketchViewModel) {
     var savedStrokesBase64 by remember { mutableStateOf<String?>(null) }
     var savedImageBase64DataUri by remember { mutableStateOf<String?>(null) }
     var savedPreviewBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var showDraftCardContent by remember { mutableStateOf(false) }
 
     // Toolbar Options with all features enabled
     val toolbarOptions = remember {
@@ -104,11 +110,12 @@ fun SketchScreen(viewModel: SketchViewModel) {
             showRedo = true,
             showClear = true,
             showSave = true,
-            showDownloadFile = false,
-            showDownloadImage = false,
+            showDownloadFile = true,
+            showDownloadImage = true,
             showSettings = true,
             showColorPalette = true,
-            showBrushSize = true
+            showBrushSize = true,
+            showOrientation = true
         )
     }
 
@@ -155,25 +162,38 @@ fun SketchScreen(viewModel: SketchViewModel) {
                 toolbarOptions = toolbarOptions,
                 icons = customIcons,
                 canvasSize = currentCanvasSize,
-                onClear = {
-                    viewModel.clearDraft()
-                    controller.newSketch()
-                },
-                onSave = { strokes ->
-                    viewModel.saveDraft(strokes)
-                    saveSketchArtifacts(
-                        strokes = strokes,
-                        background = sketchPadBackground,
-                        onStrokesBase64 = { savedStrokesBase64 = it },
-                        onImageBase64 = { savedImageBase64DataUri = it },
-                        onPreview = { savedPreviewBitmap = it }
-                    )
-                },
-                onDownloadFile = { file, type ->
-                    saveFileToDownloads(context, file, type)
-                },
-                onDownloadImage = { imageBitmap ->
-                    saveImageToGallery(context, imageBitmap.asAndroidBitmap())
+                callbacks = object : SketchPadCallbacks {
+                    override fun onClear() {
+                        viewModel.clearDraft()
+                        controller.newSketch()
+                    }
+
+                    override fun onSave(strokes: List<ActiveStroke>) {
+                        viewModel.saveDraft(strokes)
+                        saveSketchArtifacts(
+                            strokes = strokes,
+                            background = sketchPadBackground,
+                            onStrokesBase64 = { savedStrokesBase64 = it },
+                            onImageBase64 = { savedImageBase64DataUri = it },
+                            onPreview = { savedPreviewBitmap = it }
+                        )
+                    }
+
+                    override fun onDownloadFile(file: java.io.File, type: com.ovais.sketch_pad.pad.data.SketchFileType) {
+                        saveFileToDownloads(context, file, type)
+                    }
+
+                    override fun onDownloadImage(image: ImageBitmap) {
+                        saveImageToGallery(context, image.asAndroidBitmap())
+                    }
+
+                    override fun onOrientationToggleRequested(targetOrientation: SketchOrientation) {
+                        (context as? ComponentActivity)?.requestedOrientation = when (targetOrientation) {
+                            SketchOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            SketchOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                            SketchOrientation.Auto -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        }
+                    }
                 }
             )
         }
@@ -190,54 +210,74 @@ fun SketchScreen(viewModel: SketchViewModel) {
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDraftCardContent = !showDraftCardContent },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "Saved Draft",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = if (savedStrokesBase64.isNullOrBlank()) {
-                            "Tap toolbar save to generate editable strokes + image base64"
-                        } else {
-                            "Strokes: ${savedStrokesBase64!!.length} chars • Image URI: ${savedImageBase64DataUri?.length ?: 0} chars"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                    Icon(
+                        imageVector = if (showDraftCardContent) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                        contentDescription = if (showDraftCardContent) "Collapse draft panel" else "Expand draft panel"
                     )
-                    TextButton(
-                        enabled = !savedStrokesBase64.isNullOrBlank(),
-                        onClick = {
-                            savedStrokesBase64?.let { encoded ->
-                                runCatching { decodeStrokesFromBase64(encoded) }
-                                    .onSuccess { decoded ->
-                                        controller.setStrokes(decoded)
+                }
+
+                if (showDraftCardContent) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = if (savedStrokesBase64.isNullOrBlank()) {
+                                    "Tap toolbar save to generate editable strokes + image base64"
+                                } else {
+                                    "Strokes: ${savedStrokesBase64!!.length} chars • Image URI: ${savedImageBase64DataUri?.length ?: 0} chars"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            TextButton(
+                                enabled = !savedStrokesBase64.isNullOrBlank(),
+                                onClick = {
+                                    savedStrokesBase64?.let { encoded ->
+                                        runCatching { decodeStrokesFromBase64(encoded) }
+                                            .onSuccess { decoded ->
+                                                controller.setStrokes(decoded)
+                                            }
                                     }
+                                }
+                            ) {
+                                Text("Restore & Continue Editing")
                             }
                         }
-                    ) {
-                        Text("Restore & Continue Editing")
+                        savedPreviewBitmap?.let { preview ->
+                            Image(
+                                bitmap = preview,
+                                contentDescription = "Saved sketch preview",
+                                modifier = Modifier
+                                    .size(82.dp)
+                                    .background(Color.White, RoundedCornerShape(10.dp))
+                            )
+                        }
                     }
-                }
-                savedPreviewBitmap?.let { preview ->
-                    Image(
-                        bitmap = preview,
-                        contentDescription = "Saved sketch preview",
-                        modifier = Modifier
-                            .size(82.dp)
-                            .background(Color.White, RoundedCornerShape(10.dp))
-                    )
                 }
             }
         }
