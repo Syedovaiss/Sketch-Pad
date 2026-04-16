@@ -1,0 +1,5 @@
+jdk:
+  - openjdk21
+
+install:
+  - ./gradlew :sketch-pad:clean :sketch-pad:assembleRelease :sketch-pad:publishToMavenLocal -x test -x lint
