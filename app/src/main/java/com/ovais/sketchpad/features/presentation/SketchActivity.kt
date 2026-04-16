@@ -10,6 +10,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,11 +38,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.CanvasSize
 import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
@@ -49,6 +54,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.presentation.SketchCanvas
 import com.ovais.sketch_pad.pad.presentation.SketchPad
+import com.ovais.sketch_pad.pad.presentation.generateBitmap
+import com.ovais.sketch_pad.utils.decodeStrokesFromBase64
+import com.ovais.sketch_pad.utils.encodeStrokesToBase64
+import com.ovais.sketch_pad.utils.toBase64Png
+import com.ovais.sketch_pad.utils.toPngDataUri
 import com.ovais.sketchpad.core.ui.theme.SketchPadTheme
 import com.ovais.sketchpad.utils.saveFileToDownloads
 import com.ovais.sketchpad.utils.saveImageToGallery
@@ -79,6 +89,10 @@ fun SketchScreen(viewModel: SketchViewModel) {
     var showTips by remember { mutableStateOf(false) }
     var isHeadlessMode by remember { mutableStateOf(false) }
     val currentCanvasSize by remember { mutableStateOf<CanvasSize>(CanvasSize.Free) }
+    val sketchPadBackground = MaterialTheme.colorScheme.background
+    var savedStrokesBase64 by remember { mutableStateOf<String?>(null) }
+    var savedImageBase64DataUri by remember { mutableStateOf<String?>(null) }
+    var savedPreviewBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     // Toolbar Options with all features enabled
     val toolbarOptions = remember {
@@ -90,8 +104,8 @@ fun SketchScreen(viewModel: SketchViewModel) {
             showRedo = true,
             showClear = true,
             showSave = true,
-            showDownloadFile = true,
-            showDownloadImage = true,
+            showDownloadFile = false,
+            showDownloadImage = false,
             showSettings = true,
             showColorPalette = true,
             showBrushSize = true
@@ -137,6 +151,7 @@ fun SketchScreen(viewModel: SketchViewModel) {
             SketchPad(
                 modifier = Modifier.fillMaxSize(),
                 controller = controller,
+                backgroundColor = sketchPadBackground,
                 toolbarOptions = toolbarOptions,
                 icons = customIcons,
                 canvasSize = currentCanvasSize,
@@ -146,6 +161,13 @@ fun SketchScreen(viewModel: SketchViewModel) {
                 },
                 onSave = { strokes ->
                     viewModel.saveDraft(strokes)
+                    saveSketchArtifacts(
+                        strokes = strokes,
+                        background = sketchPadBackground,
+                        onStrokesBase64 = { savedStrokesBase64 = it },
+                        onImageBase64 = { savedImageBase64DataUri = it },
+                        onPreview = { savedPreviewBitmap = it }
+                    )
                 },
                 onDownloadFile = { file, type ->
                     saveFileToDownloads(context, file, type)
@@ -154,6 +176,70 @@ fun SketchScreen(viewModel: SketchViewModel) {
                     saveImageToGallery(context, imageBitmap.asAndroidBitmap())
                 }
             )
+        }
+
+        // Demo panel for save/restore + image/base64 preview
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 88.dp)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Saved Draft",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (savedStrokesBase64.isNullOrBlank()) {
+                            "Tap toolbar save to generate editable strokes + image base64"
+                        } else {
+                            "Strokes: ${savedStrokesBase64!!.length} chars • Image URI: ${savedImageBase64DataUri?.length ?: 0} chars"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    TextButton(
+                        enabled = !savedStrokesBase64.isNullOrBlank(),
+                        onClick = {
+                            savedStrokesBase64?.let { encoded ->
+                                runCatching { decodeStrokesFromBase64(encoded) }
+                                    .onSuccess { decoded ->
+                                        controller.setStrokes(decoded)
+                                    }
+                            }
+                        }
+                    ) {
+                        Text("Restore & Continue Editing")
+                    }
+                }
+                savedPreviewBitmap?.let { preview ->
+                    Image(
+                        bitmap = preview,
+                        contentDescription = "Saved sketch preview",
+                        modifier = Modifier
+                            .size(82.dp)
+                            .background(Color.White, RoundedCornerShape(10.dp))
+                    )
+                }
+            }
         }
 
         // UX: Floating Tip Button
@@ -252,4 +338,21 @@ fun TipItem(title: String, description: String) {
             lineHeight = 18.sp
         )
     }
+}
+
+private fun saveSketchArtifacts(
+    strokes: List<ActiveStroke>,
+    background: Color,
+    onStrokesBase64: (String) -> Unit,
+    onImageBase64: (String) -> Unit,
+    onPreview: (ImageBitmap) -> Unit
+) {
+    onStrokesBase64(encodeStrokesToBase64(strokes))
+    val imageBitmap = generateBitmap(
+        strokes = strokes,
+        backgroundColor = background
+    )
+    onPreview(imageBitmap)
+    val imageDataUri = imageBitmap.toBase64Png().toPngDataUri()
+    onImageBase64(imageDataUri)
 }
