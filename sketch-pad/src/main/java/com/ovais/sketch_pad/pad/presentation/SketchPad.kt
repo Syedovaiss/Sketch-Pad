@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalConfiguration
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.ovais.sketch_pad.R
@@ -68,6 +70,7 @@ import com.ovais.sketch_pad.pad.data.CanvasSize
 import com.ovais.sketch_pad.pad.data.SketchFileType
 import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchPoint
+import com.ovais.sketch_pad.pad.data.SketchOrientation
 import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.domain.SketchController
@@ -87,17 +90,19 @@ import kotlin.math.sqrt
 fun SketchPad(
     modifier: Modifier = Modifier,
     controller: SketchController = remember { SketchController() },
+    callbacks: SketchPadCallbacks = object : SketchPadCallbacks {},
     backgroundColor: Color = Color.Unspecified,
     toolbarSelectionColor: Color = Color(0xFF2E7D32),
     toolbarBackgroundColor: Color = Color.Unspecified,
     toolbarIconTint: Color = Color.Unspecified,
+    toolbarTextColor: Color = Color.Unspecified,
+    toolbarSelectedIconTint: Color = Color.Unspecified,
+    exportImageBackgroundColor: Color = Color.Unspecified,
+    orientation: SketchOrientation = SketchOrientation.Auto,
+    exportOrientation: SketchOrientation = SketchOrientation.Auto,
     showToolbar: Boolean = true,
     toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
-    onClear: () -> Unit = {},
-    onSave: (List<ActiveStroke>) -> Unit = {},
-    onDownloadFile: (File, SketchFileType) -> Unit = { _, _ -> },
-    onDownloadImage: (ImageBitmap) -> Unit = {},
     gridEnabled: Boolean = true,
     gridSize: Float = 70f,
     gridColor: Color = Color.Unspecified,
@@ -111,6 +116,41 @@ fun SketchPad(
     val isDark = isSystemInDarkTheme()
     val density = androidx.compose.ui.platform.LocalDensity.current.density
 
+    val configuration = LocalConfiguration.current
+    val systemIsLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+
+    var toolbarOrientation by remember(orientation, systemIsLandscape) {
+        mutableStateOf(
+            when (orientation) {
+                SketchOrientation.Auto ->
+                    if (systemIsLandscape) SketchOrientation.Landscape else SketchOrientation.Portrait
+                SketchOrientation.Portrait -> SketchOrientation.Portrait
+                SketchOrientation.Landscape -> SketchOrientation.Landscape
+            }
+        )
+    }
+
+    val effectiveOrientation = toolbarOrientation
+    val effectiveExportOrientation = when (exportOrientation) {
+        SketchOrientation.Auto -> effectiveOrientation
+        SketchOrientation.Portrait -> SketchOrientation.Portrait
+        SketchOrientation.Landscape -> SketchOrientation.Landscape
+    }
+
+    val toggleOrientationFromToolbar = {
+        val nextOrientation = if (effectiveOrientation == SketchOrientation.Portrait) {
+            SketchOrientation.Landscape
+        } else {
+            SketchOrientation.Portrait
+        }
+        callbacks.onOrientationToggleRequested(nextOrientation)
+        toolbarOrientation = nextOrientation
+    }
+
+    LaunchedEffect(effectiveOrientation) {
+        callbacks.onOrientationChanged(effectiveOrientation)
+    }
+
     val finalBackgroundColor = if (backgroundColor == Color.Unspecified) {
         if (isDark) Color(0xFF1C1B1F) else Color.White
     } else backgroundColor
@@ -118,6 +158,12 @@ fun SketchPad(
     val finalGridColor = if (gridColor == Color.Unspecified) {
         if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.05f)
     } else gridColor
+
+    val finalExportBackgroundColor = if (exportImageBackgroundColor == Color.Unspecified) {
+        finalBackgroundColor
+    } else {
+        exportImageBackgroundColor
+    }
 
     LaunchedEffect(gridEnabled) {
         controller.isGridEnabled = gridEnabled
@@ -136,6 +182,9 @@ fun SketchPad(
     val brushWidth = controller.brushWidth
 
     var toolbarExpanded by remember { mutableStateOf(false) }
+    var landscapeToolbarCollapsed by remember(effectiveOrientation) {
+        mutableStateOf(effectiveOrientation == SketchOrientation.Landscape)
+    }
     var isPointerDown by remember { mutableStateOf(false) }
     var isErasing by remember { mutableStateOf(false) }
     var eraserPosition by remember { mutableStateOf<Offset?>(null) }
@@ -179,12 +228,12 @@ fun SketchPad(
                                 strokes = controller.strokes,
                                 canvasSize = canvasSize,
                                 fileType = type,
-                                backgroundColor = if (isDark) Color(0xFF1C1B1F) else Color.White,
+                                backgroundColor = finalExportBackgroundColor,
                                 includeGrid = controller.isGridEnabled,
                                 gridSize = gridSize,
                                 gridColor = finalGridColor
                             )
-                            onDownloadFile(file, type)
+                            callbacks.onDownloadFile(file, type)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -244,6 +293,9 @@ fun SketchPad(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(
+                    start = if (effectiveOrientation == SketchOrientation.Landscape) 90.dp else 0.dp
+                )
                 .graphicsLayer {
                     translationX = controller.translation.x
                     translationY = controller.translation.y
@@ -365,6 +417,20 @@ fun SketchPad(
             drawSmoothStroke(activePoints, brushColor, brushWidth)
         }
 
+        // Full-surface move layer so panning is not constrained to canvas draw bounds.
+        if (toolMode == ToolMode.MOVE) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            controller.translation += dragAmount
+                        }
+                    }
+            )
+        }
+
         EraserCursor(
             positionProvider = { eraserPosition },
             isErasing = isErasing,
@@ -379,210 +445,446 @@ fun SketchPad(
             } else {
                 Color(0xFF121212)
             }
+            val resolvedToolbarTextColor = if (toolbarTextColor != Color.Unspecified) {
+                toolbarTextColor
+            } else if (toolbarBg.luminance() > 0.5f) {
+                Color.Black
+            } else {
+                Color.White
+            }
+            val resolvedToolbarSelectedIconTint = if (toolbarSelectedIconTint != Color.Unspecified) {
+                toolbarSelectedIconTint
+            } else {
+                Color.White
+            }
+            val toolbarAlignment = when (effectiveOrientation) {
+                SketchOrientation.Portrait -> Alignment.TopCenter
+                SketchOrientation.Landscape, SketchOrientation.Auto -> Alignment.TopStart
+            }
+
             Column(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
+                    .align(toolbarAlignment)
                     .statusBarsPadding()
-                    .padding(10.dp)
+                    .padding(
+                        start = 10.dp,
+                        top = 10.dp,
+                        end = 10.dp,
+                        bottom = 10.dp
+                    )
                     .background(toolbarBg, RoundedCornerShape(14.dp))
                     .padding(10.dp)
                     .zIndex(200f)
             ) {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    if (toolbarOptions.showMove) {
-                        ToolButton(
-                            icon = icons.moveIcon,
-                            selected = toolMode == ToolMode.MOVE,
-                            selectedColor = toolbarSelectionColor,
-                            iconTint = toolbarIconTint
-                        ) {
-                            controller.toolMode = ToolMode.MOVE
-                            isErasing = false
-                            eraserPosition = null
-                        }
-                    }
-                    if (toolbarOptions.showDraw) {
-                        ToolButton(
-                            icon = icons.drawIcon,
-                            selected = toolMode == ToolMode.DRAW,
-                            selectedColor = toolbarSelectionColor,
-                            iconTint = toolbarIconTint
-                        ) {
-                            controller.toolMode = ToolMode.DRAW
-                            isErasing = false
-                            eraserPosition = null
-                        }
-                    }
-                    if (toolbarOptions.showErase) {
-                        ToolButton(
-                            icon = icons.eraseIcon,
-                            selected = toolMode == ToolMode.ERASE,
-                            selectedColor = toolbarSelectionColor,
-                            iconTint = toolbarIconTint
-                        ) {
-                            controller.toolMode = ToolMode.ERASE
-                            isErasing = false
-                            eraserPosition = null
-                        }
-                    }
-                    if (toolbarOptions.showUndo) {
-                        ToolButton(
-                            icon = icons.undoIcon,
-                            selected = false,
-                            enabled = controller.canUndo()
-                        ) {
-                            controller.undo()
-                        }
-                    }
-                    if (toolbarOptions.showRedo) {
-                        ToolButton(
-                            icon = icons.redoIcon,
-                            selected = false,
-                            enabled = controller.canRedo()
-                        ) {
-                            controller.redo()
-                        }
-                    }
-                    if (toolbarOptions.showClear) {
-                        ToolButton(icon = icons.clearIcon, selected = false) {
-                            controller.clear()
-                            onClear()
-                        }
-                    }
-                    if (toolbarOptions.showSave) {
-                        ToolButton(icon = icons.saveIcon, selected = false) {
-                            onSave(controller.strokes)
-                        }
-                    }
-                    if (toolbarOptions.showDownloadFile) {
-                        ToolButton(icon = icons.downloadFile, selected = false) {
-                            showExportDialog = true
-                        }
-                    }
-                    if (toolbarOptions.showDownloadImage) {
-                        ToolButton(icon = icons.downloadImage, selected = false) {
-                            val paperSizeLimit = when (canvasSize) {
-                                is CanvasSize.A4 -> canvasSize.size
-                                is CanvasSize.A3 -> canvasSize.size
-                                is CanvasSize.Custom -> canvasSize.size
-                                else -> null
-                            }
+                val isLandscapeLayout = effectiveOrientation == SketchOrientation.Landscape
+                val iconSpacing = if (isLandscapeLayout) 6.dp else 10.dp
 
-                            val exportSpec = if (paperSizeLimit == null) {
-                                calculateStrokeExportSpec(
+                if (isLandscapeLayout) {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(iconSpacing)
+                    ) {
+                        ToolButton(
+                            icon = if (landscapeToolbarCollapsed) ">" else "<",
+                            selected = false,
+                            iconTint = toolbarIconTint
+                        ) {
+                            landscapeToolbarCollapsed = !landscapeToolbarCollapsed
+                        }
+
+                        if (landscapeToolbarCollapsed) {
+                            return@Column
+                        }
+
+                        if (toolbarOptions.showMove) {
+                            ToolButton(
+                                icon = icons.moveIcon,
+                                selected = toolMode == ToolMode.MOVE,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.MOVE
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showDraw) {
+                            ToolButton(
+                                icon = icons.drawIcon,
+                                selected = toolMode == ToolMode.DRAW,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.DRAW
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showErase) {
+                            ToolButton(
+                                icon = icons.eraseIcon,
+                                selected = toolMode == ToolMode.ERASE,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.ERASE
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showUndo) {
+                            ToolButton(
+                                icon = icons.undoIcon,
+                                selected = false,
+                                enabled = controller.canUndo()
+                            ) {
+                                controller.undo()
+                            }
+                        }
+                        if (toolbarOptions.showRedo) {
+                            ToolButton(
+                                icon = icons.redoIcon,
+                                selected = false,
+                                enabled = controller.canRedo()
+                            ) {
+                                controller.redo()
+                            }
+                        }
+                        if (toolbarOptions.showClear) {
+                            ToolButton(icon = icons.clearIcon, selected = false) {
+                                controller.clear()
+                            callbacks.onClear()
+                            }
+                        }
+                        if (toolbarOptions.showSave) {
+                            ToolButton(icon = icons.saveIcon, selected = false) {
+                            callbacks.onSave(controller.strokes)
+                            }
+                        }
+                        if (toolbarOptions.showDownloadFile) {
+                            ToolButton(icon = icons.downloadFile, selected = false) {
+                                showExportDialog = true
+                            }
+                        }
+                        if (toolbarOptions.showDownloadImage) {
+                            ToolButton(icon = icons.downloadImage, selected = false) {
+                                val paperSizeLimit = when (canvasSize) {
+                                    is CanvasSize.A4 -> canvasSize.size
+                                    is CanvasSize.A3 -> canvasSize.size
+                                    is CanvasSize.Custom -> canvasSize.size
+                                    else -> null
+                                }
+
+                                val exportSpec = if (paperSizeLimit == null) {
+                                    calculateStrokeExportSpec(
+                                        strokes = controller.strokes,
+                                        padding = exportPadding,
+                                        fallbackWidth = if (effectiveOrientation == SketchOrientation.Landscape) 1920 else 1080,
+                                        fallbackHeight = if (effectiveOrientation == SketchOrientation.Landscape) 1080 else 1920
+                                    ).withOrientation(effectiveOrientation)
+                                } else {
+                                    null
+                                }
+
+                                val bitmap = generateBitmap(
                                     strokes = controller.strokes,
-                                    padding = exportPadding
+                                    width = paperSizeLimit?.width?.toInt() ?: exportSpec!!.width,
+                                    height = paperSizeLimit?.height?.toInt() ?: exportSpec!!.height,
+                                backgroundColor = finalExportBackgroundColor,
+                                    gridEnabled = controller.isGridEnabled,
+                                    gridColor = finalGridColor,
+                                    gridSize = gridSize,
+                                    translation = exportSpec?.translation ?: Offset.Zero,
+                                    density = density,
+                                    canvasSize = canvasSize,
+                                exportOrientation = effectiveExportOrientation,
+                                    maxExportPixels = maxExportPixels
                                 )
-                            } else {
-                                null
+                                callbacks.onDownloadImage(bitmap)
                             }
-
-                            val bitmap = generateBitmap(
-                                strokes = controller.strokes,
-                                width = paperSizeLimit?.width?.toInt() ?: exportSpec!!.width,
-                                height = paperSizeLimit?.height?.toInt() ?: exportSpec!!.height,
-                                backgroundColor = if (isDark) Color(0xFF1C1B1F) else Color.White,
-                                gridEnabled = controller.isGridEnabled,
-                                gridColor = finalGridColor,
-                                gridSize = gridSize,
-                                translation = exportSpec?.translation ?: Offset.Zero,
-                                density = density,
-                                canvasSize = canvasSize,
-                                maxExportPixels = maxExportPixels
-                            )
-                            onDownloadImage(bitmap)
+                        }
+                        if (toolbarOptions.showOrientation) {
+                            ToolButton(
+                                icon = icons.orientationIcon,
+                                selected = false,
+                                iconTint = toolbarIconTint
+                            ) {
+                                toggleOrientationFromToolbar()
+                            }
+                        }
+                        if (toolbarOptions.showSettings) {
+                            ToolButton(icon = icons.settingsIcon, selected = toolbarExpanded) {
+                                toolbarExpanded = !toolbarExpanded
+                            }
                         }
                     }
-                    if (toolbarOptions.showSettings) {
-                        ToolButton(icon = icons.settingsIcon, selected = toolbarExpanded) {
-                            toolbarExpanded = !toolbarExpanded
+                } else {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(iconSpacing)
+                    ) {
+                        if (toolbarOptions.showMove) {
+                            ToolButton(
+                                icon = icons.moveIcon,
+                                selected = toolMode == ToolMode.MOVE,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.MOVE
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showDraw) {
+                            ToolButton(
+                                icon = icons.drawIcon,
+                                selected = toolMode == ToolMode.DRAW,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.DRAW
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showErase) {
+                            ToolButton(
+                                icon = icons.eraseIcon,
+                                selected = toolMode == ToolMode.ERASE,
+                                selectedColor = toolbarSelectionColor,
+                                iconTint = toolbarIconTint,
+                                selectedIconTint = resolvedToolbarSelectedIconTint
+                            ) {
+                                controller.toolMode = ToolMode.ERASE
+                                isErasing = false
+                                eraserPosition = null
+                            }
+                        }
+                        if (toolbarOptions.showUndo) {
+                            ToolButton(
+                                icon = icons.undoIcon,
+                                selected = false,
+                                enabled = controller.canUndo()
+                            ) {
+                                controller.undo()
+                            }
+                        }
+                        if (toolbarOptions.showRedo) {
+                            ToolButton(
+                                icon = icons.redoIcon,
+                                selected = false,
+                                enabled = controller.canRedo()
+                            ) {
+                                controller.redo()
+                            }
+                        }
+                        if (toolbarOptions.showClear) {
+                            ToolButton(icon = icons.clearIcon, selected = false) {
+                                controller.clear()
+                                callbacks.onClear()
+                            }
+                        }
+                        if (toolbarOptions.showSave) {
+                            ToolButton(icon = icons.saveIcon, selected = false) {
+                                callbacks.onSave(controller.strokes)
+                            }
+                        }
+                        if (toolbarOptions.showDownloadFile) {
+                            ToolButton(icon = icons.downloadFile, selected = false) {
+                                showExportDialog = true
+                            }
+                        }
+                        if (toolbarOptions.showDownloadImage) {
+                            ToolButton(icon = icons.downloadImage, selected = false) {
+                                val paperSizeLimit = when (canvasSize) {
+                                    is CanvasSize.A4 -> canvasSize.size
+                                    is CanvasSize.A3 -> canvasSize.size
+                                    is CanvasSize.Custom -> canvasSize.size
+                                    else -> null
+                                }
+
+                                val exportSpec = if (paperSizeLimit == null) {
+                                    calculateStrokeExportSpec(
+                                        strokes = controller.strokes,
+                                        padding = exportPadding,
+                                        fallbackWidth = if (effectiveOrientation == SketchOrientation.Landscape) 1920 else 1080,
+                                        fallbackHeight = if (effectiveOrientation == SketchOrientation.Landscape) 1080 else 1920
+                                    ).withOrientation(effectiveOrientation)
+                                } else {
+                                    null
+                                }
+
+                                val bitmap = generateBitmap(
+                                    strokes = controller.strokes,
+                                    width = paperSizeLimit?.width?.toInt() ?: exportSpec!!.width,
+                                    height = paperSizeLimit?.height?.toInt() ?: exportSpec!!.height,
+                                    backgroundColor = finalExportBackgroundColor,
+                                    gridEnabled = controller.isGridEnabled,
+                                    gridColor = finalGridColor,
+                                    gridSize = gridSize,
+                                    translation = exportSpec?.translation ?: Offset.Zero,
+                                    density = density,
+                                    canvasSize = canvasSize,
+                                    exportOrientation = effectiveExportOrientation,
+                                    maxExportPixels = maxExportPixels
+                                )
+                                callbacks.onDownloadImage(bitmap)
+                            }
+                        }
+                        if (toolbarOptions.showOrientation) {
+                            ToolButton(
+                                icon = icons.orientationIcon,
+                                selected = false,
+                                iconTint = toolbarIconTint
+                            ) {
+                                toggleOrientationFromToolbar()
+                            }
+                        }
+                        if (toolbarOptions.showSettings) {
+                            ToolButton(icon = icons.settingsIcon, selected = toolbarExpanded) {
+                                toolbarExpanded = !toolbarExpanded
+                            }
                         }
                     }
                 }
 
                 if (toolbarExpanded) {
-                    if (toolbarOptions.showColorPalette) {
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val colorPalette = if (isDark) {
-                                listOf(
-                                    Color.White,
-                                    Color.Red,
-                                    Color.Green,
-                                    Color.Blue,
-                                    Color.Yellow
-                                )
-                            } else {
-                                listOf(
-                                    Color.Black,
-                                    Color.Red,
-                                    Color.Green,
-                                    Color.Blue,
-                                    Color.Yellow
-                                )
-                            }
-                            colorPalette.forEach { color ->
-                                Box(
-                                    Modifier
-                                        .size(34.dp)
-                                        .background(color, CircleShape)
-                                        .pointerInput(Unit) {
-                                            detectTapGestures { controller.brushColor = color }
-                                        }
-                                )
-                            }
-                            Box(
-                                Modifier
-                                    .size(34.dp)
-                                    .background(brushColor, CircleShape)
-                                    .border(
-                                        2.dp,
-                                        if (isDark) Color.White else Color.Black,
-                                        CircleShape
+                    if (isLandscapeLayout) {
+                        val dialogTextColor = if (isDark) Color.White else Color.Black
+                        Dialog(onDismissRequest = { toolbarExpanded = false }) {
+                            Column(
+                                modifier = Modifier
+                                    .background(
+                                        if (isDark) Color(0xFF2C2C2C) else Color.White,
+                                        RoundedCornerShape(16.dp)
                                     )
-                                    .pointerInput(Unit) {
-                                        detectTapGestures { showColorPicker = true }
-                                    },
-                                contentAlignment = Alignment.Center
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.color_palette),
-                                    contentDescription = "Pick Color",
-                                    tint = if (brushColor.luminance() > 0.5f) Color.Black else Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                Text(
+                                    "Toolbar Settings",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = dialogTextColor
                                 )
+                                ToolbarSettingsContent(
+                                    isDark = isDark,
+                                    toolbarOptions = toolbarOptions,
+                                    brushColor = brushColor,
+                                    brushWidth = brushWidth,
+                                    isGridEnabled = controller.isGridEnabled,
+                                    textColor = dialogTextColor,
+                                    onBrushColorSelected = { controller.brushColor = it },
+                                    onOpenColorPicker = { showColorPicker = true },
+                                    onBrushWidthChanged = { controller.brushWidth = it },
+                                    onGridEnabledChanged = { controller.isGridEnabled = it }
+                                )
+                                TextButton(
+                                    onClick = { toolbarExpanded = false },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) { Text("Done") }
                             }
                         }
-                    }
-
-                    if (toolbarOptions.showBrushSize) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("Brush Size: ${brushWidth.toInt()}", color = Color.White)
-                        Slider(
-                            value = brushWidth,
-                            onValueChange = { controller.brushWidth = it },
-                            valueRange = 2f..40f
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Show Grid", color = Color.White)
-                        Switch(
-                            checked = controller.isGridEnabled,
-                            onCheckedChange = { controller.isGridEnabled = it }
+                    } else {
+                        ToolbarSettingsContent(
+                            isDark = isDark,
+                            toolbarOptions = toolbarOptions,
+                            brushColor = brushColor,
+                            brushWidth = brushWidth,
+                            isGridEnabled = controller.isGridEnabled,
+                            textColor = resolvedToolbarTextColor,
+                            onBrushColorSelected = { controller.brushColor = it },
+                            onOpenColorPicker = { showColorPicker = true },
+                            onBrushWidthChanged = { controller.brushWidth = it },
+                            onGridEnabledChanged = { controller.isGridEnabled = it }
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolbarSettingsContent(
+    isDark: Boolean,
+    toolbarOptions: SketchToolbarOptions,
+    brushColor: Color,
+    brushWidth: Float,
+    isGridEnabled: Boolean,
+    textColor: Color,
+    onBrushColorSelected: (Color) -> Unit,
+    onOpenColorPicker: () -> Unit,
+    onBrushWidthChanged: (Float) -> Unit,
+    onGridEnabledChanged: (Boolean) -> Unit
+) {
+    if (toolbarOptions.showColorPalette) {
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val colorPalette = if (isDark) {
+                listOf(Color.White, Color.Red, Color.Green, Color.Blue, Color.Yellow)
+            } else {
+                listOf(Color.Black, Color.Red, Color.Green, Color.Blue, Color.Yellow)
+            }
+            colorPalette.forEach { color ->
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .background(color, CircleShape)
+                        .pointerInput(Unit) {
+                            detectTapGestures { onBrushColorSelected(color) }
+                        }
+                )
+            }
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .background(brushColor, CircleShape)
+                    .border(
+                        2.dp,
+                        if (isDark) Color.White else Color.Black,
+                        CircleShape
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures { onOpenColorPicker() }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.color_palette),
+                    contentDescription = "Pick Color",
+                    tint = if (brushColor.luminance() > 0.5f) Color.Black else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+
+    if (toolbarOptions.showBrushSize) {
+        Spacer(Modifier.height(6.dp))
+        Text("Brush Size: ${brushWidth.toInt()}", color = textColor)
+        Slider(
+            value = brushWidth,
+            onValueChange = onBrushWidthChanged,
+            valueRange = 2f..40f
+        )
+    }
+
+    Spacer(Modifier.height(6.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Show Grid", color = textColor)
+        Switch(
+            checked = isGridEnabled,
+            onCheckedChange = onGridEnabledChanged
+        )
     }
 }
 
@@ -635,6 +937,18 @@ private data class StrokeExportSpec(
     val height: Int,
     val translation: Offset
 )
+
+private fun StrokeExportSpec.withOrientation(orientation: SketchOrientation): StrokeExportSpec {
+    return when (orientation) {
+        SketchOrientation.Landscape -> {
+            if (width >= height) this else copy(width = height)
+        }
+        SketchOrientation.Portrait -> {
+            if (height >= width) this else copy(height = width)
+        }
+        SketchOrientation.Auto -> this
+    }
+}
 
 private fun calculateStrokeExportSpec(
     strokes: List<ActiveStroke>,
@@ -691,6 +1005,7 @@ fun generateBitmap(
     scale: Float = 1f,
     density: Float = 1f,
     canvasSize: CanvasSize = CanvasSize.Free,
+    exportOrientation: SketchOrientation = SketchOrientation.Auto,
     maxExportPixels: Long = 40_000_000L
 ): ImageBitmap {
     val maxBitmapDimension = 8192
@@ -709,8 +1024,36 @@ fun generateBitmap(
     } else {
         translation
     }
-    val baseWidth = resolvedWidth.coerceAtLeast(1)
-    val baseHeight = resolvedHeight.coerceAtLeast(1)
+    val rawBaseWidth = resolvedWidth.coerceAtLeast(1)
+    val rawBaseHeight = resolvedHeight.coerceAtLeast(1)
+
+    val (baseWidth, baseHeight) = when (exportOrientation) {
+        SketchOrientation.Portrait -> {
+            if (rawBaseWidth > rawBaseHeight) rawBaseWidth to rawBaseWidth else rawBaseWidth to rawBaseHeight
+        }
+        SketchOrientation.Landscape -> {
+            if (rawBaseHeight > rawBaseWidth) rawBaseHeight to rawBaseHeight else rawBaseWidth to rawBaseHeight
+        }
+        SketchOrientation.Auto -> rawBaseWidth to rawBaseHeight
+    }
+
+    val orientationAdjustedTranslation = when (exportOrientation) {
+        SketchOrientation.Portrait -> {
+            if (rawBaseWidth > rawBaseHeight) {
+                resolvedTranslation + Offset(0f, (rawBaseWidth - rawBaseHeight) / 2f)
+            } else {
+                resolvedTranslation
+            }
+        }
+        SketchOrientation.Landscape -> {
+            if (rawBaseHeight > rawBaseWidth) {
+                resolvedTranslation + Offset((rawBaseHeight - rawBaseWidth) / 2f, 0f)
+            } else {
+                resolvedTranslation
+            }
+        }
+        SketchOrientation.Auto -> resolvedTranslation
+    }
     val downscaleByDimension = min(
         maxBitmapDimension.toFloat() / baseWidth.toFloat(),
         maxBitmapDimension.toFloat() / baseHeight.toFloat()
@@ -725,7 +1068,7 @@ fun generateBitmap(
     val finalWidth = (baseWidth * outputScaleFactor).toInt().coerceAtLeast(1)
     val finalHeight = (baseHeight * outputScaleFactor).toInt().coerceAtLeast(1)
     val effectiveScale = scale * outputScaleFactor
-    val effectiveTranslation = resolvedTranslation * outputScaleFactor
+    val effectiveTranslation = orientationAdjustedTranslation * outputScaleFactor
 
     val bitmap = ImageBitmap(finalWidth, finalHeight)
     val canvas = androidx.compose.ui.graphics.Canvas(bitmap)
@@ -771,6 +1114,7 @@ private fun ToolButton(
     selected: Boolean,
     selectedColor: Color = Color(0xFF2E7D32),
     iconTint: Color = Color.Unspecified,
+    selectedIconTint: Color = Color.White,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -783,7 +1127,7 @@ private fun ToolButton(
         )
     ) {
         val resolvedIconTint = if (iconTint != Color.Unspecified) iconTint else Color.LightGray
-        val tint = if (selected) Color.White else if (enabled) resolvedIconTint else Color.DarkGray
+        val tint = if (selected) selectedIconTint else if (enabled) resolvedIconTint else Color.DarkGray
         when (icon) {
             is Int -> Icon(
                 painter = painterResource(id = icon),

@@ -35,6 +35,9 @@ A professional-grade, high-performance, and highly customizable Android drawing 
 - **📤 Pro-Grade Export:** Export your work as **High-Res Images**, **PDFs**, **SVGs**, or **JSON** for later editing.
 - **💾 Session Management:** Easily save and load sketch data to/from local storage or databases.
 - **🎛️ Customizable Toolbar Selection:** Configure selected tool highlight color using `toolbarSelectionColor`.
+- **🧭 Orientation-Aware UX:** Auto/portrait/landscape toolbar layouts, runtime orientation toggle support, and orientation callbacks.
+- **🔁 Editable Resume Utilities:** Save and restore editable strokes via Base64 JSON.
+- **🖼️ Base64 Image Utilities:** Generate raw Base64 PNG and Data URI (`data:image/png;base64,...`) helpers.
 
 ## 🚀 Installation
 
@@ -74,17 +77,24 @@ fun MyDrawingScreen() {
         modifier = Modifier.fillMaxSize(),
         canvasSize = CanvasSize.A4, // Optional: Set a fixed paper size
         gridEnabled = true,         // Optional: Show background grid
-        toolbarSelectionColor = Color(0xFFFF6F00) // Optional: selected tool color
+        toolbarSelectionColor = Color(0xFFFF6F00), // Optional: selected tool background
+        toolbarBackgroundColor = Color(0xFF111827), // Optional: toolbar container
+        toolbarTextColor = Color.White, // Optional: toolbar/settings text
+        toolbarIconTint = Color.LightGray, // Optional: unselected icon tint
+        toolbarSelectedIconTint = Color.Yellow // Optional: selected icon tint
     )
 }
 ```
 
 ### 🛠️ Professional Usage
 
-#### ViewModel Integration (Best Practice)
-For the best UX, host the `SketchController` in your `ViewModel` to survive configuration changes (like theme switching or rotation):
+#### Callback Interface (Recommended)
+`SketchPad` now uses a centralized callback interface.
 
 ```kotlin
+import com.ovais.sketch_pad.pad.presentation.SketchPadCallbacks
+import com.ovais.sketch_pad.pad.data.SketchOrientation
+
 class SketchViewModel : ViewModel() {
     val controller = SketchController()
     
@@ -95,9 +105,69 @@ class SketchViewModel : ViewModel() {
 fun SketchScreen(viewModel: SketchViewModel) {
     SketchPad(
         controller = viewModel.controller,
-        onSave = { strokes -> viewModel.saveDraft(strokes) }
+        callbacks = object : SketchPadCallbacks {
+            override fun onSave(strokes: List<ActiveStroke>) {
+                viewModel.saveDraft(strokes)
+            }
+
+            override fun onOrientationChanged(orientation: SketchOrientation) {
+                // optional: observe current effective orientation
+            }
+        }
     )
 }
+```
+
+#### Orientation Controls
+You can control layout orientation and allow runtime toggle from toolbar:
+
+```kotlin
+SketchPad(
+    orientation = SketchOrientation.Auto,
+    exportOrientation = SketchOrientation.Auto, // export follows current orientation
+    toolbarOptions = SketchToolbarOptions(
+        showOrientation = true
+    ),
+    callbacks = object : SketchPadCallbacks {
+        override fun onOrientationToggleRequested(targetOrientation: SketchOrientation) {
+            // Host can rotate Activity here if needed
+        }
+    }
+)
+```
+
+#### Export Background Customization
+Set a dedicated export image background independent from drawing canvas:
+
+```kotlin
+SketchPad(
+    backgroundColor = Color(0xFF121212),          // draw background
+    exportImageBackgroundColor = Color.White       // exported image/file background
+)
+```
+
+#### Editable Strokes Save/Restore (Base64)
+Use stroke Base64 JSON to continue editing later:
+
+```kotlin
+import com.ovais.sketch_pad.utils.encodeStrokesToBase64
+import com.ovais.sketch_pad.utils.decodeStrokesFromBase64
+
+val encoded = encodeStrokesToBase64(controller.strokes)
+val restored = decodeStrokesFromBase64(encoded)
+controller.setStrokes(restored)
+```
+
+#### Image Base64 / Data URI
+Generate Base64 PNG for upload/display:
+
+```kotlin
+import com.ovais.sketch_pad.utils.toBase64Png
+import com.ovais.sketch_pad.utils.toPngDataUri
+
+val image = generateBitmap(strokes = controller.strokes)
+val base64Raw = image.toBase64Png()
+val base64DataUri = base64Raw.toPngDataUri() // data:image/png;base64,...
 ```
 
 #### Professional Exporting
@@ -122,7 +192,10 @@ The SDK is built for speed:
 ## 📝 Recent Improvements
 - Fixed draw coordinate alignment after switching from move mode back to draw mode.
 - Fixed eraser cursor position mismatch after canvas translation.
-- Added `toolbarSelectionColor` to customize selected tool highlight color.
+- Added toolbar theming options (`toolbarBackgroundColor`, `toolbarTextColor`, `toolbarIconTint`, `toolbarSelectedIconTint`).
+- Added callback interface (`SketchPadCallbacks`) and orientation callbacks/toggle requests.
+- Added orientation-aware layout and export controls (`orientation`, `exportOrientation`).
+- Added Base64 stroke/image utility methods for save/restore and Data URI support.
 - Internal sample app migrated from Hilt to Koin for dependency injection.
 
 ## 📋 Requirements

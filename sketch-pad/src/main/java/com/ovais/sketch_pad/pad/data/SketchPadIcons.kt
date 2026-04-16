@@ -10,6 +10,7 @@ data class SketchPadIcons(
     val redoIcon: Int = R.drawable.ic_redo,
     val clearIcon: Int = R.drawable.ic_clear,
     val saveIcon: Int = R.drawable.ic_save,
+    val orientationIcon: Int = R.drawable.ic_orientation,
     val settingsIcon: Int = R.drawable.ic_settings,
     val downloadFile: Int = R.drawable.download_file,
     val downloadImage: Int = R.drawable.download_image,
