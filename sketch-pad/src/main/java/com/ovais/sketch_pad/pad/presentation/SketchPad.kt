@@ -89,6 +89,8 @@ fun SketchPad(
     controller: SketchController = remember { SketchController() },
     backgroundColor: Color = Color.Unspecified,
     toolbarSelectionColor: Color = Color(0xFF2E7D32),
+    toolbarBackgroundColor: Color = Color.Unspecified,
+    toolbarIconTint: Color = Color.Unspecified,
     showToolbar: Boolean = true,
     toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
@@ -96,10 +98,14 @@ fun SketchPad(
     onSave: (List<ActiveStroke>) -> Unit = {},
     onDownloadFile: (File, SketchFileType) -> Unit = { _, _ -> },
     onDownloadImage: (ImageBitmap) -> Unit = {},
-    gridEnabled: Boolean = true, // Initial value
-    gridSize: Float = 50f,
+    gridEnabled: Boolean = true,
+    gridSize: Float = 70f,
     gridColor: Color = Color.Unspecified,
-    canvasSize: CanvasSize = CanvasSize.Free
+    canvasSize: CanvasSize = CanvasSize.Free,
+    minZoom: Float = 0.5f,
+    maxZoom: Float = 4f,
+    exportPadding: Float = 50f,
+    maxExportPixels: Long = 40_000_000L
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
@@ -139,8 +145,11 @@ fun SketchPad(
 
     val activePoints = remember { mutableStateListOf<SketchPoint>() }
 
+    val clampedMinZoom = minZoom.coerceAtLeast(0.1f)
+    val clampedMaxZoom = maxZoom.coerceAtLeast(clampedMinZoom)
+
     val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
-        controller.scale *= zoomChange
+        controller.scale = (controller.scale * zoomChange).coerceIn(clampedMinZoom, clampedMaxZoom)
         controller.translation += offsetChange
     }
 
@@ -363,7 +372,13 @@ fun SketchPad(
         )
 
         if (showToolbar) {
-            val toolbarBg = if (isDark) Color(0xFF2C2C2C) else Color(0xFF121212)
+            val toolbarBg = if (toolbarBackgroundColor != Color.Unspecified) {
+                toolbarBackgroundColor
+            } else if (isDark) {
+                Color(0xFF2C2C2C)
+            } else {
+                Color(0xFF121212)
+            }
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -381,7 +396,8 @@ fun SketchPad(
                         ToolButton(
                             icon = icons.moveIcon,
                             selected = toolMode == ToolMode.MOVE,
-                            selectedColor = toolbarSelectionColor
+                            selectedColor = toolbarSelectionColor,
+                            iconTint = toolbarIconTint
                         ) {
                             controller.toolMode = ToolMode.MOVE
                             isErasing = false
@@ -392,7 +408,8 @@ fun SketchPad(
                         ToolButton(
                             icon = icons.drawIcon,
                             selected = toolMode == ToolMode.DRAW,
-                            selectedColor = toolbarSelectionColor
+                            selectedColor = toolbarSelectionColor,
+                            iconTint = toolbarIconTint
                         ) {
                             controller.toolMode = ToolMode.DRAW
                             isErasing = false
@@ -403,7 +420,8 @@ fun SketchPad(
                         ToolButton(
                             icon = icons.eraseIcon,
                             selected = toolMode == ToolMode.ERASE,
-                            selectedColor = toolbarSelectionColor
+                            selectedColor = toolbarSelectionColor,
+                            iconTint = toolbarIconTint
                         ) {
                             controller.toolMode = ToolMode.ERASE
                             isErasing = false
@@ -454,7 +472,10 @@ fun SketchPad(
                             }
 
                             val exportSpec = if (paperSizeLimit == null) {
-                                calculateStrokeExportSpec(controller.strokes)
+                                calculateStrokeExportSpec(
+                                    strokes = controller.strokes,
+                                    padding = exportPadding
+                                )
                             } else {
                                 null
                             }
@@ -469,7 +490,8 @@ fun SketchPad(
                                 gridSize = gridSize,
                                 translation = exportSpec?.translation ?: Offset.Zero,
                                 density = density,
-                                canvasSize = canvasSize
+                                canvasSize = canvasSize,
+                                maxExportPixels = maxExportPixels
                             )
                             onDownloadImage(bitmap)
                         }
@@ -668,10 +690,11 @@ fun generateBitmap(
     translation: Offset = Offset.Zero,
     scale: Float = 1f,
     density: Float = 1f,
-    canvasSize: CanvasSize = CanvasSize.Free
+    canvasSize: CanvasSize = CanvasSize.Free,
+    maxExportPixels: Long = 40_000_000L
 ): ImageBitmap {
     val maxBitmapDimension = 8192
-    val maxBitmapPixels = 40_000_000L
+    val clampedMaxExportPixels = maxExportPixels.coerceAtLeast(1L)
     val fixedCanvasSize = when (canvasSize) {
         is CanvasSize.A4 -> canvasSize.size
         is CanvasSize.A3 -> canvasSize.size
@@ -693,8 +716,8 @@ fun generateBitmap(
         maxBitmapDimension.toFloat() / baseHeight.toFloat()
     ).coerceAtMost(1f)
     val currentPixels = baseWidth.toLong() * baseHeight.toLong()
-    val downscaleByPixels = if (currentPixels > maxBitmapPixels) {
-        sqrt(maxBitmapPixels.toDouble() / currentPixels.toDouble()).toFloat()
+    val downscaleByPixels = if (currentPixels > clampedMaxExportPixels) {
+        sqrt(clampedMaxExportPixels.toDouble() / currentPixels.toDouble()).toFloat()
     } else {
         1f
     }
@@ -747,6 +770,7 @@ private fun ToolButton(
     icon: Any,
     selected: Boolean,
     selectedColor: Color = Color(0xFF2E7D32),
+    iconTint: Color = Color.Unspecified,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -758,7 +782,8 @@ private fun ToolButton(
             RoundedCornerShape(10.dp)
         )
     ) {
-        val tint = if (selected) Color.White else if (enabled) Color.LightGray else Color.DarkGray
+        val resolvedIconTint = if (iconTint != Color.Unspecified) iconTint else Color.LightGray
+        val tint = if (selected) Color.White else if (enabled) resolvedIconTint else Color.DarkGray
         when (icon) {
             is Int -> Icon(
                 painter = painterResource(id = icon),
