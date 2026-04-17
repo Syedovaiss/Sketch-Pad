@@ -1,5 +1,9 @@
 package com.ovais.sketch_pad.pad.presentation
 
+import android.annotation.SuppressLint
+import android.content.pm.ActivityInfo
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,6 +90,7 @@ import kotlin.math.sqrt
 /**
  * A professional-grade, reusable SketchPad component for drawing and erasing with infinite canvas support.
  */
+@SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
 fun SketchPad(
     modifier: Modifier = Modifier,
@@ -98,8 +103,9 @@ fun SketchPad(
     toolbarTextColor: Color = Color.Unspecified,
     toolbarSelectedIconTint: Color = Color.Unspecified,
     exportImageBackgroundColor: Color = Color.Unspecified,
-    orientation: SketchOrientation = SketchOrientation.Auto,
-    exportOrientation: SketchOrientation = SketchOrientation.Auto,
+    orientation: SketchOrientation = SketchOrientation.Landscape,
+    exportOrientation: SketchOrientation = SketchOrientation.Landscape,
+    syncActivityOrientation: Boolean = false,
     showToolbar: Boolean = true,
     toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
     icons: SketchPadIcons = SketchPadIcons.Default,
@@ -149,6 +155,22 @@ fun SketchPad(
 
     LaunchedEffect(effectiveOrientation) {
         callbacks.onOrientationChanged(effectiveOrientation)
+    }
+
+    val targetActivityOrientation = when (orientation) {
+        SketchOrientation.Portrait -> SketchOrientation.Portrait
+        SketchOrientation.Landscape -> SketchOrientation.Landscape
+        SketchOrientation.Auto -> effectiveOrientation
+    }
+
+    LaunchedEffect(syncActivityOrientation, targetActivityOrientation) {
+        if (!syncActivityOrientation) return@LaunchedEffect
+        val activity = context.findComponentActivity() ?: return@LaunchedEffect
+        activity.requestedOrientation = when (targetActivityOrientation) {
+            SketchOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            SketchOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            SketchOrientation.Auto -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     val finalBackgroundColor = if (backgroundColor == Color.Unspecified) {
@@ -806,6 +828,14 @@ fun SketchPad(
                 }
             }
         }
+    }
+}
+
+private tailrec fun Context.findComponentActivity(): androidx.activity.ComponentActivity? {
+    return when (this) {
+        is androidx.activity.ComponentActivity -> this
+        is ContextWrapper -> baseContext.findComponentActivity()
+        else -> null
     }
 }
 
