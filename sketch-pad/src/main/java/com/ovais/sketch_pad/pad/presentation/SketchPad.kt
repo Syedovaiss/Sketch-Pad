@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -781,6 +782,9 @@ fun SketchPad(
                         Dialog(onDismissRequest = { toolbarExpanded = false }) {
                             Column(
                                 modifier = Modifier
+                                    .fillMaxWidth(0.9f)
+                                    .heightIn(max = configuration.screenHeightDp.dp * 0.9f)
+                                    .verticalScroll(rememberScrollState())
                                     .background(
                                         if (isDark) Color(0xFF2C2C2C) else Color.White,
                                         RoundedCornerShape(16.dp)
