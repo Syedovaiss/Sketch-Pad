@@ -1,5 +1,6 @@
 package com.ovais.sketchpad.features.presentation
 
+import android.app.AlertDialog
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -163,6 +164,15 @@ fun SketchScreen(viewModel: SketchViewModel) {
                 icons = customIcons,
                 canvasSize = currentCanvasSize,
                 callbacks = object : SketchPadCallbacks {
+                    override fun onClearRequested(performClear: () -> Unit) {
+                        AlertDialog.Builder(context)
+                            .setTitle("Clear sketch?")
+                            .setMessage("All strokes will be removed from the canvas.")
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton("Clear") { _, _ -> performClear() }
+                            .show()
+                    }
+
                     override fun onClear() {
                         viewModel.clearDraft()
                         controller.newSketch()

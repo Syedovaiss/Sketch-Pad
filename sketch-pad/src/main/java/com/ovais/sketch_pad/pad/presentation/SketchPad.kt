@@ -105,7 +105,7 @@ fun SketchPad(
     toolbarSelectedIconTint: Color = Color.Unspecified,
     exportImageBackgroundColor: Color = Color.Unspecified,
     orientation: SketchOrientation = SketchOrientation.Landscape,
-    exportOrientation: SketchOrientation = SketchOrientation.Landscape,
+    exportOrientation: SketchOrientation = SketchOrientation.Auto,
     syncActivityOrientation: Boolean = false,
     showToolbar: Boolean = true,
     toolbarOptions: SketchToolbarOptions = SketchToolbarOptions.Default,
@@ -578,8 +578,10 @@ fun SketchPad(
                         }
                         if (toolbarOptions.showClear) {
                             ToolButton(icon = icons.clearIcon, selected = false) {
-                                controller.clear()
-                            callbacks.onClear()
+                                callbacks.onClearRequested {
+                                    controller.clear()
+                                    callbacks.onClear()
+                                }
                             }
                         }
                         if (toolbarOptions.showSave) {
@@ -708,8 +710,10 @@ fun SketchPad(
                         }
                         if (toolbarOptions.showClear) {
                             ToolButton(icon = icons.clearIcon, selected = false) {
-                                controller.clear()
-                                callbacks.onClear()
+                                callbacks.onClearRequested {
+                                    controller.clear()
+                                    callbacks.onClear()
+                                }
                             }
                         }
                         if (toolbarOptions.showSave) {
