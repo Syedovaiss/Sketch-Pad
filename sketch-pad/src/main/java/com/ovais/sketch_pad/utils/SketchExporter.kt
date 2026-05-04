@@ -9,8 +9,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.CanvasSize
+import com.ovais.sketch_pad.pad.data.SketchDocument
 import com.ovais.sketch_pad.pad.data.SketchFileType
-import kotlinx.serialization.json.Json
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
@@ -195,7 +195,7 @@ object SketchExporter {
     }
 
     fun exportToJson(context: Context, strokes: List<ActiveStroke>, fileName: String): File {
-        val jsonString = Json.encodeToString(strokes)
+        val jsonString = encodeSketchDocument(SketchDocument.fromStrokes(strokes))
         val tempFile = File(context.cacheDir, fileName)
         tempFile.writeText(jsonString)
         return tempFile
