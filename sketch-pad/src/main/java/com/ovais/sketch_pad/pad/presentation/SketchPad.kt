@@ -77,10 +77,12 @@ import com.ovais.sketch_pad.pad.data.SketchFileType
 import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchPoint
 import com.ovais.sketch_pad.pad.data.SketchOrientation
+import com.ovais.sketch_pad.pad.data.SketchStrokePersistenceFormat
 import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.domain.SketchController
 import com.ovais.sketch_pad.utils.SketchExporter
+import com.ovais.sketch_pad.utils.encodeStrokesForPersistenceFormat
 import com.ovais.sketch_pad.utils.toArgbLong
 import com.ovais.sketch_pad.utils.toColor
 import java.io.File
@@ -125,7 +127,13 @@ fun SketchPad(
      */
     eraseType: EraseType? = null,
     /** Called when the user changes erase mode in settings (and after [controller] is updated). */
-    onEraseTypeChange: ((EraseType) -> Unit)? = null
+    onEraseTypeChange: ((EraseType) -> Unit)? = null,
+    /**
+     * Toolbar save also invokes [SketchPadCallbacks.onSavePersistencePayload] with an encoded string.
+     * Defaults to [SketchStrokePersistenceFormat.Base64] (same as [com.ovais.sketch_pad.utils.encodeStrokesToBase64]).
+     * Use [SketchStrokePersistenceFormat.None] to disable the extra callback and only use [SketchPadCallbacks.onSave].
+     */
+    strokePersistenceFormat: SketchStrokePersistenceFormat = SketchStrokePersistenceFormat.Base64
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
@@ -610,7 +618,12 @@ fun SketchPad(
                         }
                         if (toolbarOptions.showSave) {
                             ToolButton(icon = icons.saveIcon, selected = false) {
-                            callbacks.onSave(controller.strokes)
+                                dispatchToolbarSave(
+                                    controller.strokes,
+                                    controller,
+                                    callbacks,
+                                    strokePersistenceFormat
+                                )
                             }
                         }
                         if (toolbarOptions.showDownloadFile) {
@@ -742,7 +755,12 @@ fun SketchPad(
                         }
                         if (toolbarOptions.showSave) {
                             ToolButton(icon = icons.saveIcon, selected = false) {
-                                callbacks.onSave(controller.strokes)
+                                dispatchToolbarSave(
+                                    controller.strokes,
+                                    controller,
+                                    callbacks,
+                                    strokePersistenceFormat
+                                )
                             }
                         }
                         if (toolbarOptions.showDownloadFile) {
@@ -865,6 +883,22 @@ fun SketchPad(
             }
         }
     }
+}
+
+private fun dispatchToolbarSave(
+    strokes: List<ActiveStroke>,
+    controller: SketchController,
+    callbacks: SketchPadCallbacks,
+    strokePersistenceFormat: SketchStrokePersistenceFormat
+) {
+    callbacks.onSave(strokes)
+    if (strokePersistenceFormat == SketchStrokePersistenceFormat.None) return
+    val payload = encodeStrokesForPersistenceFormat(
+        strokes,
+        strokePersistenceFormat,
+        controller.sketchId
+    ) ?: return
+    callbacks.onSavePersistencePayload(strokes, payload, strokePersistenceFormat)
 }
 
 private tailrec fun Context.findComponentActivity(): androidx.activity.ComponentActivity? {

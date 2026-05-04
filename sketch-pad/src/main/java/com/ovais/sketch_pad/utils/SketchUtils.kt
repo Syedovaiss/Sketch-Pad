@@ -7,7 +7,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import com.ovais.sketch_pad.pad.data.ActiveStroke
-import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
 
 internal fun distanceToSegment(
@@ -44,25 +43,23 @@ fun Long.toColor(): Color = Color(this.toInt())
 
 private const val PNG_DATA_URI_PREFIX = "data:image/png;base64,"
 
-private val sketchJson = Json {
-    ignoreUnknownKeys = true
-}
-
 /**
  * Encodes editable stroke data to Base64 JSON for save/restore flows.
+ * For smaller payloads, prefer [encodeStrokesToJson], [encodeSketchDocument], or [encodeStrokesToGzipBase64].
  */
 fun encodeStrokesToBase64(strokes: List<ActiveStroke>): String {
-    val json = sketchJson.encodeToString(strokes)
+    val json = SketchJson.encodeToString(strokes)
     return Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 }
 
 /**
  * Decodes stroke data from Base64 JSON and returns editable strokes.
+ * For mixed or migrated storage, use [decodeStrokesFlexible].
  */
 fun decodeStrokesFromBase64(base64: String): List<ActiveStroke> {
     val decodedBytes = Base64.decode(base64.trim(), Base64.DEFAULT)
     val json = decodedBytes.toString(Charsets.UTF_8)
-    return sketchJson.decodeFromString(json)
+    return SketchJson.decodeFromString(json)
 }
 
 /**

@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.ovais.sketch_pad.pad.data.ActiveStroke
 import com.ovais.sketch_pad.pad.data.SketchFileType
 import com.ovais.sketch_pad.pad.data.SketchOrientation
+import com.ovais.sketch_pad.pad.data.SketchStrokePersistenceFormat
 import java.io.File
 
 /**
@@ -26,6 +27,20 @@ interface SketchPadCallbacks {
      */
     fun onClear() {}
     fun onSave(strokes: List<ActiveStroke>) {}
+
+    /**
+     * Called after [onSave] when [SketchPad.strokePersistenceFormat] is not [SketchStrokePersistenceFormat.None].
+     * The default [SketchPad] format is [SketchStrokePersistenceFormat.Base64].
+     *
+     * @param payload Encoding depends on [format] (plain JSON, Base64, gzip+Base64, etc.).
+     */
+    fun onSavePersistencePayload(
+        strokes: List<ActiveStroke>,
+        payload: String,
+        format: SketchStrokePersistenceFormat
+    ) {
+    }
+
     fun onDownloadFile(file: File, type: SketchFileType) {}
     fun onDownloadImage(image: ImageBitmap) {}
     fun onOrientationToggleRequested(targetOrientation: SketchOrientation) {}

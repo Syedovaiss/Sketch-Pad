@@ -12,7 +12,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -62,8 +65,8 @@ import com.ovais.sketch_pad.pad.presentation.SketchCanvas
 import com.ovais.sketch_pad.pad.presentation.SketchPad
 import com.ovais.sketch_pad.pad.presentation.SketchPadCallbacks
 import com.ovais.sketch_pad.pad.presentation.generateBitmap
-import com.ovais.sketch_pad.utils.decodeStrokesFromBase64
-import com.ovais.sketch_pad.utils.encodeStrokesToBase64
+import com.ovais.sketch_pad.pad.data.SketchStrokePersistenceFormat
+import com.ovais.sketch_pad.utils.decodeStrokesFlexible
 import com.ovais.sketch_pad.utils.toBase64Png
 import com.ovais.sketch_pad.utils.toPngDataUri
 import com.ovais.sketchpad.core.ui.theme.SketchPadTheme
@@ -97,7 +100,11 @@ fun SketchScreen(viewModel: SketchViewModel) {
     var isHeadlessMode by remember { mutableStateOf(false) }
     val currentCanvasSize by remember { mutableStateOf<CanvasSize>(CanvasSize.Free) }
     val sketchPadBackground = MaterialTheme.colorScheme.background
-    var savedStrokesBase64 by remember { mutableStateOf<String?>(null) }
+    var savedStrokePayload by remember { mutableStateOf<String?>(null) }
+    var lastSavedPersistenceFormat by remember { mutableStateOf<SketchStrokePersistenceFormat?>(null) }
+    /** Sample: how [SketchPad] encodes strokes on toolbar save (JSON vs Base64, etc.). */
+    /** Default matches the original sample: legacy Base64 over JSON array ([encodeStrokesToBase64]). */
+    var strokePersistenceFormat by remember { mutableStateOf(SketchStrokePersistenceFormat.Base64) }
     var savedImageBase64DataUri by remember { mutableStateOf<String?>(null) }
     var savedPreviewBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var showDraftCardContent by remember { mutableStateOf(false) }
@@ -166,6 +173,7 @@ fun SketchScreen(viewModel: SketchViewModel) {
                 toolbarOptions = toolbarOptions,
                 icons = customIcons,
                 canvasSize = currentCanvasSize,
+                strokePersistenceFormat = strokePersistenceFormat,
                 callbacks = object : SketchPadCallbacks {
                     override fun onClearRequested(performClear: () -> Unit) {
                         AlertDialog.Builder(context)
@@ -183,13 +191,21 @@ fun SketchScreen(viewModel: SketchViewModel) {
 
                     override fun onSave(strokes: List<ActiveStroke>) {
                         viewModel.saveDraft(strokes)
-                        saveSketchArtifacts(
+                        saveSketchImageArtifacts(
                             strokes = strokes,
                             background = sketchPadBackground,
-                            onStrokesBase64 = { savedStrokesBase64 = it },
                             onImageBase64 = { savedImageBase64DataUri = it },
                             onPreview = { savedPreviewBitmap = it }
                         )
+                    }
+
+                    override fun onSavePersistencePayload(
+                        strokes: List<ActiveStroke>,
+                        payload: String,
+                        format: SketchStrokePersistenceFormat
+                    ) {
+                        savedStrokePayload = payload
+                        lastSavedPersistenceFormat = format
                     }
 
                     override fun onDownloadFile(file: java.io.File, type: com.ovais.sketch_pad.pad.data.SketchFileType) {
@@ -249,6 +265,33 @@ fun SketchScreen(viewModel: SketchViewModel) {
                 }
 
                 if (showDraftCardContent) {
+                    if (!isHeadlessMode) {
+                        Text(
+                            text = "Sample: strokePersistenceFormat",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Choose encoding, then use the sketch toolbar Save. " +
+                                "Off = no encoded string (only onSave). Restore uses decodeStrokesFlexible.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SketchStrokePersistenceFormat.entries.forEach { format ->
+                                FilterChip(
+                                    selected = strokePersistenceFormat == format,
+                                    onClick = { strokePersistenceFormat = format },
+                                    label = { Text(format.sampleLabel()) }
+                                )
+                            }
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -259,20 +302,24 @@ fun SketchScreen(viewModel: SketchViewModel) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = if (savedStrokesBase64.isNullOrBlank()) {
-                                    "Tap toolbar save to generate editable strokes + image base64"
-                                } else {
-                                    "Strokes: ${savedStrokesBase64!!.length} chars • Image URI: ${savedImageBase64DataUri?.length ?: 0} chars"
+                                text = when {
+                                    strokePersistenceFormat == SketchStrokePersistenceFormat.None ->
+                                        "Format Off — toolbar save only runs onSave (no encoded payload). Pick JSON/Base64 above to capture a string."
+                                    savedStrokePayload.isNullOrBlank() ->
+                                        "Tap toolbar Save — payload: ${strokePersistenceFormat.sampleLabel()} · image preview below"
+                                    else ->
+                                        "Saved: ${lastSavedPersistenceFormat?.sampleLabel() ?: strokePersistenceFormat.sampleLabel()} · " +
+                                            "${savedStrokePayload!!.length} chars · Image URI: ${savedImageBase64DataUri?.length ?: 0} chars"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = 2,
+                                maxLines = 3,
                                 overflow = TextOverflow.Ellipsis
                             )
                             TextButton(
-                                enabled = !savedStrokesBase64.isNullOrBlank(),
+                                enabled = !savedStrokePayload.isNullOrBlank(),
                                 onClick = {
-                                    savedStrokesBase64?.let { encoded ->
-                                        runCatching { decodeStrokesFromBase64(encoded) }
+                                    savedStrokePayload?.let { encoded ->
+                                        runCatching { decodeStrokesFlexible(encoded) }
                                             .onSuccess { decoded ->
                                                 controller.setStrokes(decoded)
                                             }
@@ -372,6 +419,12 @@ fun TipCard(onDismiss: () -> Unit, onTryHeadless: () -> Unit) {
             TipItem("🧩 Headless Component", "You can use SketchCanvas directly (as seen in Headless Mode) to build your own custom toolbars and UI.")
             TipItem("🌓 Theme Sync", "White ink becomes black in light mode and vice versa automatically!")
             TipItem("📤 Multiple Formats", "Export your work as PDF, SVG, or high-res Images.")
+            TipItem(
+                "💾 Save encoding",
+                "The sample defaults to Base64 (same idea as the original encodeStrokesToBase64 demo). " +
+                    "Open Saved Draft to switch to JSON doc, raw JSON array, or gzip+Base64. " +
+                    "onSave always receives strokes; onSavePersistencePayload gives the encoded string."
+            )
         }
     }
 }
@@ -394,14 +447,21 @@ fun TipItem(title: String, description: String) {
     }
 }
 
-private fun saveSketchArtifacts(
+private fun SketchStrokePersistenceFormat.sampleLabel(): String = when (this) {
+    SketchStrokePersistenceFormat.None -> "Off"
+    SketchStrokePersistenceFormat.JsonArray -> "JSON []"
+    SketchStrokePersistenceFormat.JsonDocument -> "JSON doc"
+    SketchStrokePersistenceFormat.Base64 -> "Base64"
+    SketchStrokePersistenceFormat.GzipBase64JsonArray -> "Gzip []"
+    SketchStrokePersistenceFormat.GzipBase64Document -> "Gzip doc"
+}
+
+private fun saveSketchImageArtifacts(
     strokes: List<ActiveStroke>,
     background: Color,
-    onStrokesBase64: (String) -> Unit,
     onImageBase64: (String) -> Unit,
     onPreview: (ImageBitmap) -> Unit
 ) {
-    onStrokesBase64(encodeStrokesToBase64(strokes))
     val imageBitmap = generateBitmap(
         strokes = strokes,
         backgroundColor = background
