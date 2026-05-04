@@ -38,36 +38,6 @@ internal fun distanceToSegment(
     return kotlin.math.sqrt(dx * dx + dy * dy)
 }
 
-internal fun eraseAt(
-    strokes: MutableList<ActiveStroke>,
-    x: Float,
-    y: Float,
-    threshold: Float = 30f
-) {
-    val iterator = strokes.iterator()
-
-    while (iterator.hasNext()) {
-        val stroke = iterator.next()
-
-        val pts = stroke.points
-        for (i in 0 until pts.size - 1) {
-
-            val d = distanceToSegment(
-                x, y,
-                pts[i].x, pts[i].y,
-                pts[i + 1].x, pts[i + 1].y
-            )
-
-            if (d < threshold + stroke.strokeWidth) {
-                iterator.remove()
-                return
-            }
-        }
-    }
-}
-
-
-
 fun Color.toArgbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
 fun Long.toColor(): Color = Color(this.toInt())

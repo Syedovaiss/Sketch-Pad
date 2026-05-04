@@ -13,7 +13,10 @@ data class SketchToolbarOptions(
     val showOrientation: Boolean = false,
     val showSettings: Boolean = true,
     val showColorPalette: Boolean = true,
-    val showBrushSize: Boolean = true
+    val showBrushSize: Boolean = true,
+    val showEraseMode: Boolean = true,
+    /** When false, the "Show grid" switch is hidden from toolbar settings. */
+    val showGridToggle: Boolean = true
 ) {
     companion object {
         val Default = SketchToolbarOptions()

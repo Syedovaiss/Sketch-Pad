@@ -56,6 +56,7 @@ import com.ovais.sketch_pad.pad.data.SketchPadIcons
 import com.ovais.sketch_pad.pad.data.SketchOrientation
 import com.ovais.sketch_pad.pad.data.SketchToolbarOptions
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.ovais.sketch_pad.pad.data.EraseType
 import com.ovais.sketch_pad.pad.data.ToolMode
 import com.ovais.sketch_pad.pad.presentation.SketchCanvas
 import com.ovais.sketch_pad.pad.presentation.SketchPad
@@ -116,7 +117,9 @@ fun SketchScreen(viewModel: SketchViewModel) {
             showSettings = true,
             showColorPalette = true,
             showBrushSize = true,
-            showOrientation = true
+            showOrientation = true,
+            showEraseMode = false,
+            showGridToggle = false
         )
     }
 
@@ -204,7 +207,8 @@ fun SketchScreen(viewModel: SketchViewModel) {
                             SketchOrientation.Auto -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         }
                     }
-                }
+                },
+                eraseType = EraseType.Area()
             )
         }
 

@@ -81,20 +81,20 @@ fun SketchCanvas(
                     clip = true // Clip drawing to the canvas bounds
                 }
                 .transformable(state = transformState)
-                .pointerInput(controller.toolMode) {
+                .pointerInput(controller.toolMode, controller.eraseType) {
                     detectDragGestures(
                         onDragStart = { pos ->
                             isPointerDown = true
-                            val adjustedPos = pos / controller.scale
+                            val model = (pos - controller.translation) / controller.scale
 
                             if (controller.toolMode == ToolMode.ERASE) {
                                 isErasing = true
-                                eraserPosition = pos + controller.translation
-                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                                eraserPosition = pos
+                                controller.eraseAt(model.x, model.y)
                             } else if (controller.toolMode == ToolMode.DRAW) {
                                 onStrokeStarted()
                                 activePoints.clear()
-                                activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
+                                activePoints.add(SketchPoint(model.x, model.y))
                             }
                         },
                         onDrag = { change, dragAmount ->
@@ -108,22 +108,22 @@ fun SketchCanvas(
                                 return@detectDragGestures
                             }
 
-                            val adjustedPos = pos / controller.scale
+                            val model = (pos - controller.translation) / controller.scale
 
                             if (controller.toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos + controller.translation
-                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
+                                eraserPosition = pos
+                                controller.eraseAt(model.x, model.y)
                                 return@detectDragGestures
                             }
 
                             if (controller.toolMode == ToolMode.DRAW) {
                                 val last = activePoints.lastOrNull()
                                 if (last == null || hypot(
-                                        (adjustedPos.x - last.x).toDouble(),
-                                        (adjustedPos.y - last.y).toDouble()
+                                        (model.x - last.x).toDouble(),
+                                        (model.y - last.y).toDouble()
                                     ) > (1.0 / controller.scale)
                                 ) {
-                                    activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
+                                    activePoints.add(SketchPoint(model.x, model.y))
                                 }
                             }
                         },
