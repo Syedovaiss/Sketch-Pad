@@ -9,7 +9,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import com.ovais.sketch_pad.pad.data.ActiveStroke
+import com.ovais.sketch_pad.pad.data.EraseType
 import com.ovais.sketch_pad.pad.data.ToolMode
+import com.ovais.sketch_pad.utils.clipStrokeOutsideDisc
+import com.ovais.sketch_pad.utils.strokeTouchesDisc
 import java.util.UUID
 import kotlin.collections.ArrayDeque
 import kotlin.math.hypot
@@ -32,6 +35,9 @@ class SketchController {
     var brushWidth by mutableFloatStateOf(10f)
     var isGridEnabled by mutableStateOf(true)
 
+    /** How erasing removes ink; defaults to removing whole strokes. */
+    var eraseType: EraseType by mutableStateOf(EraseType.WholeStroke)
+
     // Current sketch session ID
     var sketchId by mutableStateOf("default")
 
@@ -47,6 +53,12 @@ class SketchController {
     private sealed class HistoryAction {
         data class AddStroke(val stroke: ActiveStroke) : HistoryAction()
         data class RemoveStroke(val stroke: ActiveStroke, val index: Int) : HistoryAction()
+        data class ReplaceStroke(
+            val index: Int,
+            val original: ActiveStroke,
+            val replacements: List<ActiveStroke>
+        ) : HistoryAction()
+
         data class Clear(val strokes: List<ActiveStroke>) : HistoryAction()
     }
 
@@ -122,6 +134,14 @@ class SketchController {
                 _strokes.add(action.index, action.stroke)
                 onEvent?.invoke(SketchEvent.Undo(action.stroke))
             }
+            is HistoryAction.ReplaceStroke -> {
+                repeat(action.replacements.size) {
+                    val removed = _strokes.removeAt(action.index)
+                    pathCache.remove(removed.id)
+                }
+                _strokes.add(action.index, action.original)
+                onEvent?.invoke(SketchEvent.Undo(action.original))
+            }
             is HistoryAction.Clear -> {
                 _strokes.addAll(action.strokes)
                 action.strokes.lastOrNull()?.let { restoredStroke ->
@@ -146,6 +166,15 @@ class SketchController {
                 pathCache.remove(action.stroke.id)
                 onEvent?.invoke(SketchEvent.StrokeRemoved(action.stroke))
             }
+            is HistoryAction.ReplaceStroke -> {
+                val removed = _strokes.removeAt(action.index)
+                pathCache.remove(removed.id)
+                onEvent?.invoke(SketchEvent.StrokeRemoved(removed))
+                action.replacements.forEachIndexed { i, stroke ->
+                    _strokes.add(action.index + i, stroke)
+                    onEvent?.invoke(SketchEvent.StrokeAdded(stroke))
+                }
+            }
             is HistoryAction.Clear -> {
                 _strokes.clear()
                 pathCache.clear()
@@ -154,28 +183,37 @@ class SketchController {
         }
     }
 
+    companion object {
+        private const val WholeStrokeHitSlop = 30f
+    }
+
     /**
-     * Performs a smart erasure at the given coordinates.
-     * Checks for proximity to any existing stroke segments.
+     * Erases at model-space coordinates [x], [y] (inverse of canvas scale/translation).
+     * Behavior follows [eraseType], or [type] when provided.
      */
-    fun eraseAt(x: Float, y: Float) {
+    fun eraseAt(x: Float, y: Float, type: EraseType = eraseType) {
+        when (type) {
+            is EraseType.WholeStroke -> eraseWholeStrokeAt(x, y)
+            is EraseType.Area -> eraseAreaAt(x, y, type.radius)
+        }
+    }
+
+    private fun eraseWholeStrokeAt(x: Float, y: Float) {
         for (i in _strokes.indices.reversed()) {
             val stroke = _strokes[i]
             val pts = stroke.points
+            val threshold = WholeStrokeHitSlop + stroke.strokeWidth
             if (pts.size == 1) {
                 val singlePoint = pts.first()
                 val d = hypot(
                     (x - singlePoint.x).toDouble(),
                     (y - singlePoint.y).toDouble()
                 ).toFloat()
-                if (d < 30f + stroke.strokeWidth) {
-                    val removedStroke = _strokes.removeAt(i)
-                    pathCache.remove(removedStroke.id)
-                    history.addLast(HistoryAction.RemoveStroke(removedStroke, i))
-                    redoStack.clear()
-                    onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
+                if (d < threshold) {
+                    removeStrokeAt(i)
                     return
                 }
+                continue
             }
             for (j in 0 until pts.size - 1) {
                 val d = com.ovais.sketch_pad.utils.distanceToSegment(
@@ -183,16 +221,47 @@ class SketchController {
                     pts[j].x, pts[j].y,
                     pts[j + 1].x, pts[j + 1].y
                 )
-                if (d < 30f + stroke.strokeWidth) {
-                    val removedStroke = _strokes.removeAt(i)
-                    pathCache.remove(removedStroke.id)
-                    history.addLast(HistoryAction.RemoveStroke(removedStroke, i))
-                    redoStack.clear()
-                    onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
+                if (d < threshold) {
+                    removeStrokeAt(i)
                     return
                 }
             }
         }
+    }
+
+    private fun eraseAreaAt(x: Float, y: Float, areaRadius: Float) {
+        for (i in _strokes.indices.reversed()) {
+            val stroke = _strokes[i]
+            val discR = areaRadius + stroke.strokeWidth * 0.5f
+            if (!strokeTouchesDisc(stroke, x, y, discR)) continue
+
+            val pieces = clipStrokeOutsideDisc(stroke, x, y, discR)
+            if (pieces.size == 1 && pieces[0].points == stroke.points) return
+
+            pathCache.remove(stroke.id)
+            _strokes.removeAt(i)
+            onEvent?.invoke(SketchEvent.StrokeRemoved(stroke))
+
+            if (pieces.isEmpty()) {
+                history.addLast(HistoryAction.RemoveStroke(stroke, i))
+            } else {
+                pieces.forEachIndexed { idx, s ->
+                    _strokes.add(i + idx, s)
+                    onEvent?.invoke(SketchEvent.StrokeAdded(s))
+                }
+                history.addLast(HistoryAction.ReplaceStroke(i, stroke, pieces))
+            }
+            redoStack.clear()
+            return
+        }
+    }
+
+    private fun removeStrokeAt(i: Int) {
+        val removedStroke = _strokes.removeAt(i)
+        pathCache.remove(removedStroke.id)
+        history.addLast(HistoryAction.RemoveStroke(removedStroke, i))
+        redoStack.clear()
+        onEvent?.invoke(SketchEvent.StrokeRemoved(removedStroke))
     }
 
     fun clear() {

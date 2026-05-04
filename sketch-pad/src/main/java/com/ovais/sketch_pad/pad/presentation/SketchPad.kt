@@ -71,6 +71,7 @@ import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.ovais.sketch_pad.R
 import com.ovais.sketch_pad.pad.data.ActiveStroke
+import com.ovais.sketch_pad.pad.data.EraseType
 import com.ovais.sketch_pad.pad.data.CanvasSize
 import com.ovais.sketch_pad.pad.data.SketchFileType
 import com.ovais.sketch_pad.pad.data.SketchPadIcons
@@ -117,7 +118,14 @@ fun SketchPad(
     minZoom: Float = 0.5f,
     maxZoom: Float = 4f,
     exportPadding: Float = 50f,
-    maxExportPixels: Long = 40_000_000L
+    maxExportPixels: Long = 40_000_000L,
+    /**
+     * When non-null, [controller.eraseType] is kept in sync with this value (e.g. hoisted state).
+     * Use with [onEraseTypeChange] for a fully controlled erase mode from the parent composable.
+     */
+    eraseType: EraseType? = null,
+    /** Called when the user changes erase mode in settings (and after [controller] is updated). */
+    onEraseTypeChange: ((EraseType) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
@@ -188,8 +196,21 @@ fun SketchPad(
         exportImageBackgroundColor
     }
 
+    val canvasStartInset = if (effectiveOrientation == SketchOrientation.Landscape) 90.dp else 0.dp
+
     LaunchedEffect(gridEnabled) {
         controller.isGridEnabled = gridEnabled
+    }
+
+    LaunchedEffect(eraseType) {
+        if (eraseType != null) {
+            controller.eraseType = eraseType
+        }
+    }
+
+    val applyEraseTypeFromUi: (EraseType) -> Unit = { newType ->
+        controller.eraseType = newType
+        onEraseTypeChange?.invoke(newType)
     }
 
     LaunchedEffect(isDark) {
@@ -313,74 +334,76 @@ fun SketchPad(
             .fillMaxSize()
             .background(finalBackgroundColor)
     ) {
-        Canvas(
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxSize()
-                .padding(
-                    start = if (effectiveOrientation == SketchOrientation.Landscape) 90.dp else 0.dp
-                )
-                .graphicsLayer {
-                    translationX = controller.translation.x
-                    translationY = controller.translation.y
-                    scaleX = controller.scale
-                    scaleY = controller.scale
-                }
-                .transformable(state = transformState)
-                .pointerInput(toolMode) {
-                    detectDragGestures(
-                        onDragStart = { pos ->
-                            isPointerDown = true
-                            val adjustedPos = pos / controller.scale
-                            if (toolMode == ToolMode.ERASE) {
-                                isErasing = true
-                                eraserPosition = pos + controller.translation
-                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
-                            } else if (toolMode == ToolMode.DRAW) {
-                                activePoints.clear()
-                                activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
-                            }
-                        },
-                        onDrag = { change, dragAmount ->
-                            val pos = change.position
-                            change.consume()
-                            if (!isPointerDown) return@detectDragGestures
-                            if (toolMode == ToolMode.MOVE) {
-                                controller.translation += dragAmount
-                                return@detectDragGestures
-                            }
-                            val adjustedPos = pos / controller.scale
-                            if (toolMode == ToolMode.ERASE) {
-                                eraserPosition = pos + controller.translation
-                                controller.eraseAt(adjustedPos.x, adjustedPos.y)
-                            } else if (toolMode == ToolMode.DRAW) {
-                                val last = activePoints.lastOrNull()
-                                if (last == null || hypot(
-                                        (adjustedPos.x - last.x).toDouble(),
-                                        (adjustedPos.y - last.y).toDouble()
-                                    ) > (1.0 / controller.scale)
-                                ) {
-                                    activePoints.add(SketchPoint(adjustedPos.x, adjustedPos.y))
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            isPointerDown = false
-                            isErasing = false
-                            eraserPosition = null
-                            if (controller.toolMode == ToolMode.DRAW && activePoints.isNotEmpty()) {
-                                controller.add(
-                                    ActiveStroke(
-                                        points = activePoints.toList(),
-                                        color = controller.brushColor.toArgbLong(),
-                                        strokeWidth = controller.brushWidth
-                                    )
-                                )
-                            }
-                            activePoints.clear()
-                        }
-                    )
-                }
+                .padding(start = canvasStartInset)
         ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = controller.translation.x
+                        translationY = controller.translation.y
+                        scaleX = controller.scale
+                        scaleY = controller.scale
+                    }
+                    .transformable(state = transformState)
+                    .pointerInput(toolMode, controller.eraseType) {
+                        detectDragGestures(
+                            onDragStart = { pos ->
+                                isPointerDown = true
+                                val model = (pos - controller.translation) / controller.scale
+                                if (toolMode == ToolMode.ERASE) {
+                                    isErasing = true
+                                    eraserPosition = pos
+                                    controller.eraseAt(model.x, model.y)
+                                } else if (toolMode == ToolMode.DRAW) {
+                                    activePoints.clear()
+                                    activePoints.add(SketchPoint(model.x, model.y))
+                                }
+                            },
+                            onDrag = { change, dragAmount ->
+                                val pos = change.position
+                                change.consume()
+                                if (!isPointerDown) return@detectDragGestures
+                                if (toolMode == ToolMode.MOVE) {
+                                    controller.translation += dragAmount
+                                    return@detectDragGestures
+                                }
+                                val model = (pos - controller.translation) / controller.scale
+                                if (toolMode == ToolMode.ERASE) {
+                                    eraserPosition = pos
+                                    controller.eraseAt(model.x, model.y)
+                                } else if (toolMode == ToolMode.DRAW) {
+                                    val last = activePoints.lastOrNull()
+                                    if (last == null || hypot(
+                                            (model.x - last.x).toDouble(),
+                                            (model.y - last.y).toDouble()
+                                        ) > (1.0 / controller.scale)
+                                    ) {
+                                        activePoints.add(SketchPoint(model.x, model.y))
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                isPointerDown = false
+                                isErasing = false
+                                eraserPosition = null
+                                if (controller.toolMode == ToolMode.DRAW && activePoints.isNotEmpty()) {
+                                    controller.add(
+                                        ActiveStroke(
+                                            points = activePoints.toList(),
+                                            color = controller.brushColor.toArgbLong(),
+                                            strokeWidth = controller.brushWidth
+                                        )
+                                    )
+                                }
+                                activePoints.clear()
+                            }
+                        )
+                    }
+            ) {
             if (controller.isGridEnabled) {
                 // Draw grid without transformation or with inverse transformation if needed
                 // But grid usually should be fixed or move with the canvas.
@@ -438,6 +461,13 @@ fun SketchPad(
             }
 
             drawSmoothStroke(activePoints, brushColor, brushWidth)
+            }
+
+            EraserCursor(
+                positionProvider = { eraserPosition },
+                isErasing = isErasing,
+                icon = icons.eraseIcon
+            )
         }
 
         // Full-surface move layer so panning is not constrained to canvas draw bounds.
@@ -453,12 +483,6 @@ fun SketchPad(
                     }
             )
         }
-
-        EraserCursor(
-            positionProvider = { eraserPosition },
-            isErasing = isErasing,
-            icon = icons.eraseIcon
-        )
 
         if (showToolbar) {
             val toolbarBg = if (toolbarBackgroundColor != Color.Unspecified) {
@@ -811,7 +835,9 @@ fun SketchPad(
                                     onBrushColorSelected = { controller.brushColor = it },
                                     onOpenColorPicker = { showColorPicker = true },
                                     onBrushWidthChanged = { controller.brushWidth = it },
-                                    onGridEnabledChanged = { controller.isGridEnabled = it }
+                                    onGridEnabledChanged = { controller.isGridEnabled = it },
+                                    eraseType = controller.eraseType,
+                                    onEraseTypeChange = applyEraseTypeFromUi
                                 )
                                 TextButton(
                                     onClick = { toolbarExpanded = false },
@@ -830,7 +856,9 @@ fun SketchPad(
                             onBrushColorSelected = { controller.brushColor = it },
                             onOpenColorPicker = { showColorPicker = true },
                             onBrushWidthChanged = { controller.brushWidth = it },
-                            onGridEnabledChanged = { controller.isGridEnabled = it }
+                            onGridEnabledChanged = { controller.isGridEnabled = it },
+                            eraseType = controller.eraseType,
+                            onEraseTypeChange = applyEraseTypeFromUi
                         )
                     }
                 }
@@ -858,8 +886,16 @@ private fun ToolbarSettingsContent(
     onBrushColorSelected: (Color) -> Unit,
     onOpenColorPicker: () -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
-    onGridEnabledChanged: (Boolean) -> Unit
+    onGridEnabledChanged: (Boolean) -> Unit,
+    eraseType: EraseType,
+    onEraseTypeChange: (EraseType) -> Unit
 ) {
+    var areaRadiusFallback by remember { mutableStateOf(24f) }
+    LaunchedEffect(eraseType) {
+        if (eraseType is EraseType.Area) {
+            areaRadiusFallback = eraseType.radius
+        }
+    }
     if (toolbarOptions.showColorPalette) {
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -912,17 +948,52 @@ private fun ToolbarSettingsContent(
         )
     }
 
-    Spacer(Modifier.height(6.dp))
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("Show Grid", color = textColor)
-        Switch(
-            checked = isGridEnabled,
-            onCheckedChange = onGridEnabledChanged
-        )
+    if (toolbarOptions.showEraseMode) {
+        Spacer(Modifier.height(6.dp))
+        val isAreaMode = eraseType is EraseType.Area
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Area eraser (partial)", color = textColor)
+            Switch(
+                checked = isAreaMode,
+                onCheckedChange = { useArea ->
+                    onEraseTypeChange(
+                        if (useArea) EraseType.Area(areaRadiusFallback) else EraseType.WholeStroke
+                    )
+                }
+            )
+        }
+        if (isAreaMode) {
+            val radius = (eraseType as EraseType.Area).radius
+            Spacer(Modifier.height(4.dp))
+            Text("Eraser radius: ${radius.toInt()}", color = textColor)
+            Slider(
+                value = radius,
+                onValueChange = { v ->
+                    areaRadiusFallback = v
+                    onEraseTypeChange(EraseType.Area(v))
+                },
+                valueRange = 8f..56f
+            )
+        }
+    }
+
+    if (toolbarOptions.showGridToggle) {
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Show Grid", color = textColor)
+            Switch(
+                checked = isGridEnabled,
+                onCheckedChange = onGridEnabledChanged
+            )
+        }
     }
 }
 
